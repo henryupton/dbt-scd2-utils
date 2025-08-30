@@ -36,7 +36,7 @@ packages:
 ```yaml
 packages:
   - git: "https://github.com/henryupton/dbt-scd2-utils.git"
-    revision: 1.0.0
+    revision: 0.0.1
 ```
 
 Then run:
