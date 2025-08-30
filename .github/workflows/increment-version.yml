@@ -78,7 +78,7 @@ jobs:
           NEW_VERSION="${{ steps.new-version.outputs.new_version }}"
           
           # Update the version in packages.yml example  
-          sed -i "s/version: \[\">=.*\"\]/version: [\"$NEW_VERSION\"]/" README.md
+          sed -i "s/version: \[\".*\"\]/version: [\"$NEW_VERSION\"]/" README.md
           
           # Update the revision line in Git installation section
           sed -i "s/revision: .*/revision: $NEW_VERSION/" README.md
