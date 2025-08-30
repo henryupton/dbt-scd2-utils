@@ -1,0 +1,44 @@
+name: 'dbt_scd2_utils_integration_tests'
+version: '1.0.0'
+config-version: 2
+
+require-dbt-version: [">=1.0.0"]
+
+profile: 'integration_tests'
+
+model-paths: ["models"]
+analysis-paths: ["analysis"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+flags:
+  send_anonymous_usage_stats: false
+
+seeds:
+  quote_columns: false
+  dbt_scd2_utils_integration_tests:
+
+models:
+  dbt_scd2_utils_integration_tests:
+    +materialized: table
+
+tests:
+  dbt_scd2_utils_integration_tests:
+    +store_failures: true
+    +severity: warn
+
+vars:
+  dbt_scd2_utils:
+    is_current_column: _is_current
+    valid_from_column: _valid_from
+    valid_to_column: _valid_to
+    updated_at_column: updated_at
+    change_type_column: _change_type
+  default_valid_to: "2999-12-31 23:59:59"

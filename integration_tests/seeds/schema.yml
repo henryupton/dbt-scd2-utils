@@ -1,0 +1,67 @@
+version: 2
+
+seeds:
+  - name: customers_raw_1
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: customer_name
+        data_type: varchar
+      - name: email
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: _updated_at
+        data_type: timestamp_tz
+
+  - name: customers_raw_2
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: customer_name
+        data_type: varchar
+      - name: email
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: _updated_at
+        data_type: timestamp_tz
+
+  - name: customers_raw_3
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: customer_name
+        data_type: varchar
+      - name: email
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: _updated_at
+        data_type: timestamp_tz
+
+  - name: customers_raw_4
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: customer_name
+        data_type: varchar
+      - name: email
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: _updated_at
+        data_type: timestamp_tz
+
+  - name: customers_raw_5
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: customer_name
+        data_type: varchar
+      - name: email
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: _updated_at
+        data_type: timestamp_tz

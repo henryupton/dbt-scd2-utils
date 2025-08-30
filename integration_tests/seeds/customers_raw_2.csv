@@ -1,0 +1,5 @@
+customer_id,customer_name,email,status,_updated_at
+1,John Doe,john.updated@example.com,ACTIVE,2024-01-02 10:00:00+0000
+2,Jane Smith,jane@example.com,INACTIVE,2024-01-01 11:00:00+0000
+3,Bob Wilson,bob@example.com,ACTIVE,2024-01-02 10:00:00+0000
+4,Alice Brown,alice@example.com,ACTIVE,2024-01-02 10:00:00+0000
