@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: test_data
+    description: Test data sources for unit testing
+    schema: "{{ target.schema }}"
+    tables:
+      - name: raw_orders
+        description: Raw order data for testing source() macro override
+        columns:
+          - name: order_id
+            description: Unique order identifier
+          - name: customer_id
+            description: Customer identifier
+          - name: order_date
+            description: Date the order was placed
+          - name: loaded_at
+            description: Timestamp when the record was loaded
+      - name: transactions
+        description: Transaction data for testing source() macro with exclude_data_after_run_start
+        identifier: test_transactions
+        columns:
+          - name: transaction_id
+            description: Unique transaction identifier
+          - name: account_id
+            description: Account identifier
+          - name: amount
+            description: Transaction amount
+          - name: transaction_date
+            description: Date the transaction occurred
+          - name: loaded_at
+            description: Timestamp when the record was loaded

@@ -1,0 +1,4 @@
+customer_id,customer_name,email,status,_updated_at
+1,Alice Smith,alice@test.com,active,2024-01-01
+2,Bob Jones,bob@test.com,inactive,2024-01-02
+3,Charlie Brown,charlie@test.com,active,2024-01-03
