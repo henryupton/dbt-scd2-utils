@@ -31,3 +31,5 @@ vars:
     change_type_column: _change_type
     # Default valid_to date for current records
     default_valid_to: "2999-12-31 23:59:59"
+    # When true, exclude data that arrived after the dbt run started
+    exclude_data_after_run_start: false
