@@ -112,7 +112,9 @@ using (
                 p.{{ col }} = n.{{ col }} {% if not loop.last %} and {% endif %}
             {%- endfor %}
             {# We want all previous records which could have been valid when any of the new records occurred. #}
+            {% if not var('dbt_scd2_utils', {}).get('update_all_previous_records', false) %}
             where n.{{ updated_at }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
+            {% endif %}
         )
         -- select * from previous_record order by {{ unique_keys_csv }}, {{ updated_at }} limit 213;
         ,

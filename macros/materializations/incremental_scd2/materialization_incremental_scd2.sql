@@ -13,8 +13,16 @@
   {%- set change_type_col = config.get('change_type_column', var('change_type_column', '_CHANGE_TYPE')) -%}
   {%- set created_at_col = config.get('created_at_column', var('created_at_column', '_CREATED_AT')) -%}
   {%- set change_type_expr = config.get('change_type_expr', none) -%}
-  {%- set scd_check_columns = config.get('scd_check_columns', none) -%}
+  {%- set scd_check_columns_raw = config.get('scd_check_columns', none) -%}
+  {%- set exclude_columns_from_change_check = config.get('exclude_columns_from_change_check', []) -%}
   {%- set default_valid_to = config.get('default_valid_to', var('default_valid_to', '2999-12-31 23:59:59')) -%}
+
+  {# Filter out excluded columns from scd_check_columns #}
+  {%- if scd_check_columns_raw and exclude_columns_from_change_check -%}
+    {%- set scd_check_columns = scd_check_columns_raw | reject('in', exclude_columns_from_change_check) | list -%}
+  {%- else -%}
+    {%- set scd_check_columns = scd_check_columns_raw -%}
+  {%- endif -%}
   {%- set unique_key = config.get('unique_key') -%}
 
   {%- if unique_key is none -%}

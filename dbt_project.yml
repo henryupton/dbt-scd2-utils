@@ -24,13 +24,16 @@ dispatch:
 vars:
   dbt_scd2_utils:
     # Default audit column names (can be overridden at model level)
+    updated_at_column: updated_at
     is_current_column: _is_current
     valid_from_column: _valid_from
     valid_to_column: _valid_to
-    updated_at_column: updated_at
     change_type_column: _change_type
     created_at_column: _created_at
     # Default valid_to date for current records
     default_valid_to: "2999-12-31 23:59:59"
     # When true, exclude data that arrived after the dbt run started
     exclude_data_after_run_start: false
+    # When true, bring all previous versions of a record in for processing when a change is detected
+    # Slower but guarantees created_at and change_type are always correct
+    update_all_previous_records: false
