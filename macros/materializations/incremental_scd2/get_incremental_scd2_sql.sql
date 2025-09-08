@@ -46,10 +46,11 @@ The generated MERGE will handle scenarios like:
     {%- set valid_to_col = arg_dict.get('valid_to_column', var('valid_to_column', '_VALID_TO')) -%}
     {%- set updated_at_col = arg_dict.get('updated_at_column', var('updated_at_column', '_UPDATED_AT')) -%}
     {%- set change_type_col = arg_dict.get('change_type_column', var('change_type_column', '_CHANGE_TYPE')) -%}
+    {%- set created_at_col = arg_dict.get('created_at_column', var('created_at_column', '_CREATED_AT')) -%}
     {%- set scd_check_columns = arg_dict.get('scd_check_columns', none) -%}
     {%- set change_type_expr = arg_dict.get('change_type_expr', none) -%}
     {%- set default_valid_to = arg_dict.get('default_valid_to', var('default_valid_to', '2999-12-31 23:59:59')) -%}
-    {%- set audit_cols_names = [is_current_col, valid_from_col, valid_to_col, updated_at_col, change_type_col] -%}
+    {%- set audit_cols_names = [is_current_col, valid_from_col, valid_to_col, updated_at_col, change_type_col, created_at_col] -%}
 
     {%- set updated_at = '"' + updated_at_col + '"' -%}
 
@@ -163,6 +164,7 @@ using (
         {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at, default_valid_to) }} as {{ valid_to_col }},
         {{ updated_at }} as {{ updated_at_col }},
         {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at) }} as {{ change_type_col }},
+        {{ dbt_scd2_utils.get_created_at_sql(unique_keys_csv, updated_at) }} as {{ created_at_col }},
     from distinct_records
     ) AS DBT_INTERNAL_SOURCE
 on (
