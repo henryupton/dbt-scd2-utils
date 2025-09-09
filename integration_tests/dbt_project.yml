@@ -36,10 +36,11 @@ tests:
 
 vars:
   dbt_scd2_utils:
+    update_all_previous_records: true
     is_current_column: _is_current
     valid_from_column: _valid_from
     valid_to_column: _valid_to
-    updated_at_column: updated_at
+    updated_at_column: _updated_at
     change_type_column: _change_type
     created_at_column: _created_at
   default_valid_to: "2999-12-31 23:59:59"

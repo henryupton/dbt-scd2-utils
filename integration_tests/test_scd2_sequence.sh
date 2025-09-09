@@ -79,7 +79,7 @@ run_iteration() {
     log_info "🔄 Iteration $iteration"
 
     # Run dbt for this iteration
-    if run_dbt "build --select $TARGET_MODEL+ --vars \"{iteration: $iteration}\""; then
+    if run_dbt "--debug build --select $TARGET_MODEL+ --vars \"{iteration: $iteration}\""; then
         RESULTS+=("$iteration,SUCCESS")
         log_success "✅ Iteration $iteration completed"
 

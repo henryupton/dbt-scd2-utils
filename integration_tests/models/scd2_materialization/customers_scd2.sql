@@ -1,8 +1,7 @@
 {{
     config(
         materialized='incremental_scd2',
-        unique_key=['customer_id'],
-        scd_check_columns=['customer_name', 'email', 'status']
+        unique_key=['customer_id']
     )
 }}
 

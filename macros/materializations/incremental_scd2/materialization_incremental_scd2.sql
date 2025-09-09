@@ -5,23 +5,23 @@
   {%- set tmp_relation = make_temp_relation(target_relation) -%}
   {%- set tmp_relation = tmp_relation.incorporate(type='table') -%}
 
-  {# Get configurable audit column names #}
-  {%- set is_current_col = config.get('is_current_column', var('is_current_column', '_IS_CURRENT')) -%}
-  {%- set valid_from_col = config.get('valid_from_column', var('valid_from_column', '_VALID_FROM')) -%}
-  {%- set valid_to_col = config.get('valid_to_column', var('valid_to_column', '_VALID_TO')) -%}
-  {%- set updated_at_col = config.get('updated_at_column', var('updated_at_column', '_UPDATED_AT')) -%}
-  {%- set change_type_col = config.get('change_type_column', var('change_type_column', '_CHANGE_TYPE')) -%}
-  {%- set created_at_col = config.get('created_at_column', var('created_at_column', '_CREATED_AT')) -%}
-  {%- set scd_check_columns_raw = config.get('scd_check_columns', none) -%}
-  {%- set exclude_columns_from_change_check = config.get('exclude_columns_from_change_check', []) -%}
+  {% set incremental_predicates = config.get("incremental_predicates", []) %}
 
-  {# Filter out excluded columns from scd_check_columns #}
-  {%- if scd_check_columns_raw and exclude_columns_from_change_check -%}
-    {%- set scd_check_columns = scd_check_columns_raw | reject('in', exclude_columns_from_change_check) | list -%}
-  {%- else -%}
-    {%- set scd_check_columns = scd_check_columns_raw -%}
-  {%- endif -%}
+  {# Get configurable audit column names #}
+  {%- set is_current_col = config.get('is_current_column', var('dbt_scd2_utils', {}).get('is_current_column')) -%}
+  {%- set valid_from_col = config.get('valid_from_column', var('dbt_scd2_utils', {}).get('valid_from_column')) -%}
+  {%- set valid_to_col = config.get('valid_to_column', var('dbt_scd2_utils', {}).get('valid_to_column')) -%}
+  {%- set updated_at_col = config.get('updated_at_column', var('dbt_scd2_utils', {}).get('updated_at_column')) -%}
+  {%- set change_type_col = config.get('change_type_column', var('dbt_scd2_utils', {}).get('change_type_column')) -%}
+  {%- set created_at_col = config.get('created_at_column', var('dbt_scd2_utils', {}).get('created_at_column')) -%}
+
+  {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
+
+  {%- set scd_check_columns_raw = config.get('scd_check_columns', none) -%}
+  {%- set exclude_columns_from_change_check = config.get('exclude_columns_from_change_check', []) + [updated_at_col] -%}
+
   {%- set unique_key = config.get('unique_key') -%}
+  {%- set scd2_unique_key = unique_key + [updated_at_col] -%}
 
   {%- if unique_key is none -%}
     {%- set error_message -%}
@@ -46,9 +46,32 @@
     {{ create_table_as(True, tmp_relation, sql) }}
   {%- endcall -%}
 
+  {%- set dest_columns = adapter.get_columns_in_relation(tmp_relation) -%}
+  
+  {# Get audit column names #}
+  {%- set audit_columns = [is_current_col, valid_from_col, valid_to_col, change_type_col, created_at_col] -%}
+
+  {# Process scd_check_columns with guard pattern and filtering #}
+  {%- if scd_check_columns_raw is not none -%}
+    {# Get case insensitive overlap with dest_columns #}
+    {%- set dest_column_names = dest_columns | map(attribute='name') | list -%}
+    {%- set scd_check_columns = dbt_scd2_utils.list_intersection(scd_check_columns_raw, dest_column_names, case_insensitive=true) -%}
+    
+    {# Create union of all columns to exclude #}
+    {%- set exclude_columns = dbt_scd2_utils.list_union(exclude_columns_from_change_check, unique_key, audit_columns) -%}
+    
+    {# Remove all excluded columns #}
+    {%- set scd_check_columns = dbt_scd2_utils.list_difference(scd_check_columns, exclude_columns, case_insensitive=true) -%}
+  {%- else -%}
+    {# If scd_check_columns is not specified, default to all non-excluded columns #}
+    {%- set dest_column_names = dest_columns | map(attribute='name') | list -%}
+    {%- set exclude_columns = dbt_scd2_utils.list_union(exclude_columns_from_change_check, unique_key, audit_columns) -%}
+    
+    {%- set scd_check_columns = dbt_scd2_utils.list_difference(dest_column_names, exclude_columns, case_insensitive=true) -%}
+  {%- endif -%}
+
   {# Validate updated_at column type #}
-  {%- set temp_columns = adapter.get_columns_in_relation(tmp_relation) -%}
-  {%- for column in temp_columns -%}
+  {%- for column in dest_columns -%}
     {%- if column.name | upper == updated_at_col | upper -%}
       {%- set column_type = column.data_type | upper -%}
       {%- if 'DATE' in column_type and 'TIME' not in column_type -%}
@@ -68,10 +91,12 @@
   {% set default_arg_dict = {
       'temp_relation': tmp_relation,
       'unique_key': unique_key,
+      'scd2_unique_key': scd2_unique_key,
 
+      'dest_columns': dest_columns,
       'scd_check_columns': scd_check_columns,
-
       'audit_columns': audit_columns,
+
       'is_current_column': is_current_col,
       'valid_from_column': valid_from_col,
       'valid_to_column': valid_to_col,
@@ -85,9 +110,6 @@
     {# Initial load: create table with audit columns #}
     {{ log("Performing initial load for SCD2 table") }}
     
-    {# Get audit column names for hash generation #}
-    {%- set audit_columns = [is_current_col, valid_from_col, valid_to_col, updated_at_col, change_type_col, created_at_col] -%}
-    
     {%- set initial_load_sql = dbt_scd2_utils.get_initial_load_scd2_sql(default_arg_dict) -%}
 
     {%- set build_sql = get_create_table_as_sql(False, target_relation, initial_load_sql) -%}
@@ -97,12 +119,10 @@
     {# Incremental load: use SCD2 merge logic #}
     {{ log("Performing incremental SCD2 update") }}
 
-    {%- set dest_columns = adapter.get_columns_in_relation(existing_relation) -%}
-    
     {# Build the argument dictionary for the SCD2 SQL macro #}
     {%- do default_arg_dict.update({
       'target_relation': target_relation,
-      'dest_columns': dest_columns,
+      'merge_update_cols': merge_update_cols,
       'incremental_predicates': config.get('incremental_predicates', []),
     }) -%}
 

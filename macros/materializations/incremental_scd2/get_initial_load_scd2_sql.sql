@@ -31,39 +31,52 @@ For an initial load with customer data, this will:
 {% macro get_initial_load_scd2_sql(arg_dict) %}
     {% set temp_relation = arg_dict["temp_relation"] %}
     {% set unique_key = arg_dict["unique_key"] %}
+    {% set scd2_unique_key = arg_dict["scd2_unique_key"] %}
+    {% set dest_columns = arg_dict["dest_columns"] %}
     {% set scd_check_columns = arg_dict["scd_check_columns"] %}
     {% set audit_columns = arg_dict["audit_columns"] %}
     
     {# Define our audit columns #}
-    {%- set is_current_col = arg_dict.get('is_current_column', var('is_current_column', '_IS_CURRENT')) -%}
-    {%- set valid_from_col = arg_dict.get('valid_from_column', var('valid_from_column', '_VALID_FROM')) -%}
-    {%- set valid_to_col = arg_dict.get('valid_to_column', var('valid_to_column', '_VALID_TO')) -%}
-    {%- set updated_at_col = arg_dict.get('updated_at_column', var('updated_at_column', '_UPDATED_AT')) -%}
-    {%- set change_type_col = arg_dict.get('change_type_column', var('change_type_column', '_CHANGE_TYPE')) -%}
-    {%- set created_at_col = arg_dict.get('created_at_column', var('created_at_column', '_CREATED_AT')) -%}
+    {%- set is_current_col = arg_dict.get('is_current_column') -%}
+    {%- set valid_from_col = arg_dict.get('valid_from_column') -%}
+    {%- set valid_to_col = arg_dict.get('valid_to_column') -%}
+    {%- set updated_at_col = arg_dict.get('updated_at_column') -%}
+    {%- set change_type_col = arg_dict.get('change_type_column') -%}
+    {%- set created_at_col = arg_dict.get('created_at_column') -%}
 
     {# Prepare unique key CSV for window functions #}
     {%- set unique_keys_csv = dbt_scd2_utils.get_quoted_csv(unique_key) -%}
-
+    {%- set select_cols = dest_columns | map(attribute="name") | list %}
 
 with source_data as (
-  select * from {{ temp_relation }}
+  select
+    *,
+    {{ dbt_utils.generate_surrogate_key(scd2_unique_key) }} as _scd2_key,
+  from {{ temp_relation }}
+),
+
+compare_records as (
+    select
+        *,
+        row_number() over(partition by _scd2_key order by 1) as _key_rank,
+    from source_data
+),
+
+distinct_records as (
+    select *
+    from compare_records
+    where _key_rank = 1
 )
-select 
-  {# Select all original columns except the updated_at column since we'll add it as an audit column #}
-  {% for col in adapter.get_columns_in_relation(temp_relation) -%}
-    {% if col.name != updated_at_col -%}
-      {{ col.name }},
-    {%- endif %}
-  {%- endfor %}
+
+select
+  {{ dbt_scd2_utils.get_quoted_csv(select_cols) }},
   
   {# Add SCD2 audit columns using reusable macros #}
   {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
   {{ dbt_scd2_utils.get_valid_from_sql(updated_at_col) }} as {{ valid_from_col }},
   {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col) }} as {{ valid_to_col }},
-  {{ updated_at_col }} as {{ updated_at_col }},
   {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col) }} as {{ change_type_col }},
   {{ dbt_scd2_utils.get_created_at_sql(unique_keys_csv, updated_at_col) }} as {{ created_at_col }}
-from source_data
+from distinct_records
 
 {% endmacro %}

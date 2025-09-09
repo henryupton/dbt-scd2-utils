@@ -35,40 +35,29 @@ The generated MERGE will handle scenarios like:
     {% set target_relation = arg_dict["target_relation"] %}
     {% set temp_relation = arg_dict["temp_relation"] %}
     {% set unique_key = arg_dict["unique_key"] %}
+    {% set scd2_unique_key = arg_dict["scd2_unique_key"] %}
     {% set dest_columns = arg_dict["dest_columns"] %}
-    {% set incremental_predicates = arg_dict.get("incremental_predicates", []) %}
+    {%- set scd_check_columns = arg_dict['scd_check_columns'] -%}
+    {%- set audit_cols_names = arg_dict["audit_columns"] -%}
+    {%- set merge_update_cols = arg_dict["merge_update_cols"] -%}
+
+    {% set incremental_predicates = arg_dict["incremental_predicates"] %}
 
     {# Define our audit columns – these are crucial for SCD2 tracking. These need to be present in the table already too.#}
-    {%- set is_current_col = arg_dict.get('is_current_column', var('is_current_column', '_IS_CURRENT')) -%}
-    {%- set valid_from_col = arg_dict.get('valid_from_column', var('valid_from_column', '_VALID_FROM')) -%}
-    {%- set valid_to_col = arg_dict.get('valid_to_column', var('valid_to_column', '_VALID_TO')) -%}
-    {%- set updated_at_col = arg_dict.get('updated_at_column', var('updated_at_column', '_UPDATED_AT')) -%}
-    {%- set change_type_col = arg_dict.get('change_type_column', var('change_type_column', '_CHANGE_TYPE')) -%}
-    {%- set created_at_col = arg_dict.get('created_at_column', var('created_at_column', '_CREATED_AT')) -%}
-
-    {%- set scd_check_columns = arg_dict.get('scd_check_columns', none) -%}
-    {%- set audit_cols_names = [is_current_col, valid_from_col, valid_to_col, updated_at_col, change_type_col, created_at_col] -%}
-
-    {%- set updated_at = '"' + updated_at_col + '"' -%}
-
-    {%- set unique_key_all = unique_key + [updated_at_col] -%}
+    {%- set is_current_col = arg_dict['is_current_column'] -%}
+    {%- set valid_from_col = arg_dict['valid_from_column'] -%}
+    {%- set valid_to_col = arg_dict['valid_to_column'] -%}
+    {%- set updated_at_col = arg_dict['updated_at_column'] -%}
+    {%- set change_type_col = arg_dict['change_type_column'] -%}
+    {%- set created_at_col = arg_dict['created_at_column'] -%}
 
     {# Prepare column lists for the MERGE statement #}
     {%- set unique_keys_csv = dbt_scd2_utils.get_quoted_csv(unique_key | map("upper")) -%}
-    {%- set dest_cols_names = dest_columns | map(attribute="name") | map("upper") | reject('in', audit_cols_names) | list -%}
+    {%- set all_dest_columns = dest_columns | map(attribute='name') | map('upper') | list -%}
+    {%- set dest_cols_names = dbt_scd2_utils.list_difference(all_dest_columns, audit_cols_names, case_insensitive=true) -%}
     {%- set dest_cols_csv = dbt_scd2_utils.get_quoted_csv(dest_cols_names) -%}
     {%- set all_cols_names = dest_cols_names + audit_cols_names -%}
     {%- set all_cols_csv = dbt_scd2_utils.get_quoted_csv(all_cols_names) -%}
-
-    {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
-
-    {# Build hash-based change detection #}
-    {%- if scd_check_columns -%}
-        {%- set hash_columns = scd_check_columns -%}
-    {%- else -%}
-        {# If no scd_check_columns specified, use all business columns #}
-        {%- set hash_columns = dest_cols_names -%}
-    {%- endif -%}
 
 {# This section is where the magic happens: the MERGE statement #}
 merge into {{ target_relation }} AS DBT_INTERNAL_DEST
@@ -80,12 +69,11 @@ using (
                 {{ dest_cols_csv }},
                 'new' as _source,
                 17 as _priority,
-                {{ updated_at }},
-                {{ dbt_utils.generate_surrogate_key(unique_key_all) }} as _scd2_key,
-                {{ dbt_utils.generate_surrogate_key(hash_columns | list) }} as _scd2_hash,
+                {{ dbt_utils.generate_surrogate_key(scd2_unique_key) }} as _scd2_key,
+                {{ dbt_utils.generate_surrogate_key(scd_check_columns | list) }} as _scd2_hash,
             from {{ temp_relation }}
         )
-        -- select * from new_records order by {{ unique_keys_csv }}, {{ updated_at }} limit 137;
+        -- select * from new_records order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 137;
         ,
         {# We need the existing version of any records that are about to be updated #}
         previous_record as (
@@ -93,19 +81,18 @@ using (
                 {{ dbt_scd2_utils.get_quoted_csv(dest_cols_names, 'p.') }},
                 'previous' as _source,
                 0 as _priority,
-                p.{{ updated_at }},
-                {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(unique_key_all, 'p.')) }} as _scd2_key,
-                {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(hash_columns, 'p.')) }} as _scd2_hash,
+                {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd2_unique_key, 'p.')) }} as _scd2_key,
+                {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd_check_columns, 'p.')) }} as _scd2_hash,
             from {{ this }} as p
             inner join new_records as n on {% for col in unique_key -%}
                 p.{{ col }} = n.{{ col }} {% if not loop.last %} and {% endif %}
             {%- endfor %}
             {# We want all previous records which could have been valid when any of the new records occurred. #}
             {% if not var('dbt_scd2_utils', {}).get('update_all_previous_records', false) %}
-            where n.{{ updated_at }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
+            where n.{{ updated_at_col }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
             {% endif %}
         )
-        -- select * from previous_record order by {{ unique_keys_csv }}, {{ updated_at }} limit 213;
+        -- select * from previous_record order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 213;
         ,
 
         {# Bring the band together. #}
@@ -116,7 +103,6 @@ using (
                 {%- endfor %}
                 _source,
                 _priority,
-                {{ updated_at }},
                 _scd2_key,
                 _scd2_hash,
             from new_records
@@ -129,12 +115,11 @@ using (
                 {%- endfor %}
                 _source,
                 _priority,
-                {{ updated_at }},
                 _scd2_key,
                 _scd2_hash,
             from previous_record
         )
-        -- select * from all_records {{ unique_keys_csv }}, {{ updated_at }} limit 321;
+        -- select * from all_records {{ unique_keys_csv }}, {{ updated_at_col }} limit 321;
         ,
 
         {# Make sure we have only one record for each unique key, updated_at permutation. #}
@@ -145,22 +130,21 @@ using (
             from all_records
             qualify row_number() over(partition by _scd2_key order by _priority) = 1
         )
-        -- select * from distinct_records order by {{ unique_keys_csv }}, {{ updated_at }} limit 123;
+        -- select * from distinct_records order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
 
     select
         {{ dest_cols_csv }},
         {# SCD2 audit columns using reusable macros #}
-        {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at) }} as {{ is_current_col }},
-        {{ dbt_scd2_utils.get_valid_from_sql(updated_at) }} as {{ valid_from_col }},
-        {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at) }} as {{ valid_to_col }},
-        {{ updated_at }} as {{ updated_at_col }},
-        {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at) }} as {{ change_type_col }},
-        {{ dbt_scd2_utils.get_created_at_sql(unique_keys_csv, updated_at) }} as {{ created_at_col }},
+        {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
+        {{ dbt_scd2_utils.get_valid_from_sql(updated_at_col) }} as {{ valid_from_col }},
+        {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col) }} as {{ valid_to_col }},
+        {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col) }} as {{ change_type_col }},
+        {{ dbt_scd2_utils.get_created_at_sql(unique_keys_csv, updated_at_col) }} as {{ created_at_col }},
     from distinct_records
     ) AS DBT_INTERNAL_SOURCE
 on (
     {# Matching condition for the MERGE: unique key and the updated_at timestamp #}
-    {% for col in unique_key_all -%}
+    {% for col in scd2_unique_key -%}
         DBT_INTERNAL_DEST.{{ col }} = DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %} and {% endif %}
     {%- endfor %}
     {%- if incremental_predicates -%}

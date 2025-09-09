@@ -14,6 +14,6 @@ using Snowflake's :: casting syntax.
 `parse_timestamp_literal('2999-12-31 23:59:59')` returns `'2999-12-31 23:59:59'::timestamp_tz`
 {%- enddocs -%}
 
-{% macro parse_timestamp_literal(timestamp_string) %}
+{%- macro parse_timestamp_literal(timestamp_string) -%}
   '{{ timestamp_string }}'::timestamp_tz
-{% endmacro %}
+{%- endmacro -%}

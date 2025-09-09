@@ -24,7 +24,7 @@ dispatch:
 vars:
   dbt_scd2_utils:
     # Default audit column names (can be overridden at model level)
-    updated_at_column: updated_at
+    updated_at_column: _updated_at
     is_current_column: _is_current
     valid_from_column: _valid_from
     valid_to_column: _valid_to
@@ -36,4 +36,6 @@ vars:
     exclude_data_after_run_start: false
     # When true, bring all previous versions of a record in for processing when a change is detected
     # Slower but guarantees created_at and change_type are always correct
-    update_all_previous_records: false
+    update_all_previous_records: true
+    scd_check_columns: ["customer_name", "email"]
+#    exclude_columns_from_change_check: ["status"]
