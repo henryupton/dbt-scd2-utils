@@ -20,5 +20,5 @@ For a customer with 3 versions (2021-01-01, 2021-06-01, 2021-12-01):
 {%- enddocs -%}
 
 {% macro get_valid_to_sql(unique_keys_csv, updated_at_col, default_valid_to) -%}
-  coalesce(lead({{ updated_at_col }}) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}), {{ dbt_scd2_utils.parse_timestamp_literal(default_valid_to) }})
+  coalesce(lead({{ updated_at_col }}) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}), {{ dbt_scd2_utils.parse_timestamp_literal(var('default_valid_to', '2999-12-31 23:59:59')) }})
 {%- endmacro %}

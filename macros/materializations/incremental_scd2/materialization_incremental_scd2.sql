@@ -14,7 +14,6 @@
   {%- set created_at_col = config.get('created_at_column', var('created_at_column', '_CREATED_AT')) -%}
   {%- set scd_check_columns_raw = config.get('scd_check_columns', none) -%}
   {%- set exclude_columns_from_change_check = config.get('exclude_columns_from_change_check', []) -%}
-  {%- set default_valid_to = config.get('default_valid_to', var('default_valid_to', '2999-12-31 23:59:59')) -%}
 
   {# Filter out excluded columns from scd_check_columns #}
   {%- if scd_check_columns_raw and exclude_columns_from_change_check -%}
@@ -66,6 +65,21 @@
 
   {%- set should_full_refresh = (should_full_refresh() or existing_relation is none) -%}
 
+  {% set default_arg_dict = {
+      'temp_relation': tmp_relation,
+      'unique_key': unique_key,
+
+      'scd_check_columns': scd_check_columns,
+
+      'audit_columns': audit_columns,
+      'is_current_column': is_current_col,
+      'valid_from_column': valid_from_col,
+      'valid_to_column': valid_to_col,
+      'updated_at_column': updated_at_col,
+      'change_type_column': change_type_col,
+      'created_at_column': created_at_col
+  }  %}
+
   {%- if should_full_refresh -%}
     
     {# Initial load: create table with audit columns #}
@@ -74,22 +88,7 @@
     {# Get audit column names for hash generation #}
     {%- set audit_columns = [is_current_col, valid_from_col, valid_to_col, updated_at_col, change_type_col, created_at_col] -%}
     
-    {# Build the argument dictionary for the initial load SQL macro #}
-    {%- set initial_load_arg_dict = {
-      'temp_relation': tmp_relation,
-      'unique_key': unique_key,
-      'scd_check_columns': scd_check_columns,
-      'audit_columns': audit_columns,
-      'is_current_column': is_current_col,
-      'valid_from_column': valid_from_col,
-      'valid_to_column': valid_to_col,
-      'updated_at_column': updated_at_col,
-      'change_type_column': change_type_col,
-      'created_at_column': created_at_col,
-      'default_valid_to': default_valid_to
-    } -%}
-    
-    {%- set initial_load_sql = dbt_scd2_utils.get_initial_load_scd2_sql(initial_load_arg_dict) -%}
+    {%- set initial_load_sql = dbt_scd2_utils.get_initial_load_scd2_sql(default_arg_dict) -%}
 
     {%- set build_sql = get_create_table_as_sql(False, target_relation, initial_load_sql) -%}
 
@@ -101,23 +100,13 @@
     {%- set dest_columns = adapter.get_columns_in_relation(existing_relation) -%}
     
     {# Build the argument dictionary for the SCD2 SQL macro #}
-    {%- set arg_dict = {
+    {%- do default_arg_dict.update({
       'target_relation': target_relation,
-      'temp_relation': tmp_relation,
-      'unique_key': unique_key,
       'dest_columns': dest_columns,
       'incremental_predicates': config.get('incremental_predicates', []),
-      'is_current_column': is_current_col,
-      'valid_from_column': valid_from_col,
-      'valid_to_column': valid_to_col,
-      'updated_at_column': updated_at_col,
-      'change_type_column': change_type_col,
-      'created_at_column': created_at_col,
-      'scd_check_columns': scd_check_columns,
-      'default_valid_to': default_valid_to
-    } -%}
+    }) -%}
 
-    {%- set build_sql = dbt_scd2_utils.get_incremental_scd2_sql(arg_dict) -%}
+    {%- set build_sql = dbt_scd2_utils.get_incremental_scd2_sql(default_arg_dict) -%}
 
   {%- endif -%}
 
@@ -127,6 +116,7 @@
 
   {{ run_hooks(post_hooks, inside_transaction=True) }}
 
+  {# Drop any temp tables we've created along the way. #}
   {%- if tmp_relation is not none -%}
     {%- do adapter.drop_relation(tmp_relation) -%}
   {%- endif -%}

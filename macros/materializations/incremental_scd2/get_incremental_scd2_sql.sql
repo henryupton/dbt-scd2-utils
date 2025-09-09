@@ -20,7 +20,6 @@ This macro creates a complex MERGE statement that handles SCD Type 2 logic by:
   - `updated_at_column`: Name of the updated_at timestamp column
   - `change_type_column`: Name of the change_type column
   - `scd_check_columns`: Columns to include in change detection hash
-  - `default_valid_to`: Default timestamp for current records
 
 **Returns:**
 - Complete MERGE SQL statement for SCD Type 2 incremental processing
@@ -48,7 +47,6 @@ The generated MERGE will handle scenarios like:
     {%- set created_at_col = arg_dict.get('created_at_column', var('created_at_column', '_CREATED_AT')) -%}
 
     {%- set scd_check_columns = arg_dict.get('scd_check_columns', none) -%}
-    {%- set default_valid_to = arg_dict.get('default_valid_to', var('default_valid_to', '2999-12-31 23:59:59')) -%}
     {%- set audit_cols_names = [is_current_col, valid_from_col, valid_to_col, updated_at_col, change_type_col, created_at_col] -%}
 
     {%- set updated_at = '"' + updated_at_col + '"' -%}
@@ -154,7 +152,7 @@ using (
         {# SCD2 audit columns using reusable macros #}
         {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at) }} as {{ is_current_col }},
         {{ dbt_scd2_utils.get_valid_from_sql(updated_at) }} as {{ valid_from_col }},
-        {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at, default_valid_to) }} as {{ valid_to_col }},
+        {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at) }} as {{ valid_to_col }},
         {{ updated_at }} as {{ updated_at_col }},
         {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at) }} as {{ change_type_col }},
         {{ dbt_scd2_utils.get_created_at_sql(unique_keys_csv, updated_at) }} as {{ created_at_col }},
