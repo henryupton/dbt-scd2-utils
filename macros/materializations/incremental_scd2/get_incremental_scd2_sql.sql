@@ -19,7 +19,6 @@ This macro creates a complex MERGE statement that handles SCD Type 2 logic by:
   - `valid_to_column`: Name of the valid_to timestamp column
   - `updated_at_column`: Name of the updated_at timestamp column
   - `change_type_column`: Name of the change_type column
-  - `change_type_expr`: Optional custom expression for change_type
   - `scd_check_columns`: Columns to include in change detection hash
   - `default_valid_to`: Default timestamp for current records
 
@@ -47,8 +46,8 @@ The generated MERGE will handle scenarios like:
     {%- set updated_at_col = arg_dict.get('updated_at_column', var('updated_at_column', '_UPDATED_AT')) -%}
     {%- set change_type_col = arg_dict.get('change_type_column', var('change_type_column', '_CHANGE_TYPE')) -%}
     {%- set created_at_col = arg_dict.get('created_at_column', var('created_at_column', '_CREATED_AT')) -%}
+
     {%- set scd_check_columns = arg_dict.get('scd_check_columns', none) -%}
-    {%- set change_type_expr = arg_dict.get('change_type_expr', none) -%}
     {%- set default_valid_to = arg_dict.get('default_valid_to', var('default_valid_to', '2999-12-31 23:59:59')) -%}
     {%- set audit_cols_names = [is_current_col, valid_from_col, valid_to_col, updated_at_col, change_type_col, created_at_col] -%}
 
@@ -64,14 +63,6 @@ The generated MERGE will handle scenarios like:
     {%- set all_cols_csv = dbt_scd2_utils.get_quoted_csv(all_cols_names) -%}
 
     {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
-
-    {# Process change_type_expr - defaults to change_type_col if not provided #}
-    {%- if change_type_expr -%}
-        {%- set change_type_sql = change_type_expr -%}
-    {%- else -%}
-        {# Default ROW_NUMBER logic #}
-        {%- set change_type_sql = dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at) -%}
-    {%- endif -%}
 
     {# Build hash-based change detection #}
     {%- if scd_check_columns -%}
