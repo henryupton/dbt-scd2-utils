@@ -42,7 +42,6 @@
     {%- set valid_to_col = arg_dict.get('valid_to_column') -%}
     {%- set updated_at_col = arg_dict.get('updated_at_column') -%}
     {%- set change_type_col = arg_dict.get('change_type_column') -%}
-    {%- set created_at_col = arg_dict.get('created_at_column') -%}
 
     {# Prepare unique key CSV for window functions #}
     {%- set unique_keys_csv = dbt_scd2_utils.get_quoted_csv(unique_key) -%}
@@ -52,20 +51,28 @@ with source_data as (
   select
     *,
     {{ dbt_utils.generate_surrogate_key(scd2_unique_key) }} as _scd2_key,
+    {{ dbt_utils.generate_surrogate_key(scd_check_columns | list) }} as _scd2_hash,
   from {{ temp_relation }}
 ),
 
+{# Make sure we have only one record for each unique key, updated_at permutation. #}
+{# Prioritise existing record over a new one in the case of a duplicate. Why would something have changed but not produced a new updated_at? #}
 compare_records as (
     select
         *,
-        row_number() over(partition by _scd2_key order by 1) as _key_rank,
+        row_number() over(partition by _scd2_key order by 1) as _key_sequence,
+        lag(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _prev_hash
     from source_data
-),
+)
+-- select * from distinct_records order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
+,
 
-distinct_records as (
+{# This allows us to ignore changes in a certain subset of columns. #}
+changes_only as (
     select *
     from compare_records
-    where _key_rank = 1
+    where _key_sequence = 1
+    and (_prev_hash is null or _scd2_hash != _prev_hash) -- Only if the hash has changed (or is the first record for this key)
 )
 
 select
@@ -75,8 +82,7 @@ select
   {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
   {{ dbt_scd2_utils.get_valid_from_sql(updated_at_col) }} as {{ valid_from_col }},
   {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col) }} as {{ valid_to_col }},
-  {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col) }} as {{ change_type_col }},
-  {# {{ dbt_scd2_utils.get_created_at_sql(unique_keys_csv, updated_at_col) }} as {{ created_at_col }} #}
-from distinct_records
+  {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col) }} as {{ change_type_col }}
+from changes_only
 
 {% endmacro %}

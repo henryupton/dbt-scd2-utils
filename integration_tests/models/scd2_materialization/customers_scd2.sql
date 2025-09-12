@@ -1,7 +1,8 @@
 {{
     config(
         materialized='incremental_scd2',
-        unique_key=['customer_id']
+        unique_key=['customer_id'],
+        exclude_columns_from_change_check=['_written_at']
     )
 }}
 
@@ -12,5 +13,6 @@ select
     customer_name,
     email,
     status,
-    _updated_at
+    _updated_at,
+    sysdate() as _written_at
 from {{ ref('customers_raw_' ~ iteration) }}

@@ -124,13 +124,23 @@ using (
 
         {# Make sure we have only one record for each unique key, updated_at permutation. #}
         {# Prioritise existing record over a new one in the case of a duplicate. Why would something have changed but not produced a new updated_at? #}
-        distinct_records as (
+        compare_records as (
             select
-                *
+                *,
+                row_number() over(partition by _scd2_key order by _priority) as _key_sequence,
+                lag(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _prev_hash
             from all_records
-            qualify row_number() over(partition by _scd2_key order by _priority) = 1
         )
-        -- select * from distinct_records order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
+        -- select * from compare_records order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
+        ,
+
+        {# This allows us to ignore changes in a certain subset of columns. #}
+        changes_only as (
+            select *
+            from compare_records
+            where _key_sequence = 1
+            and (_prev_hash is null or _scd2_hash != _prev_hash) -- Only if the hash has changed (or is the first record for this key)
+        )
 
     select
         {{ dest_cols_csv }},
@@ -138,9 +148,8 @@ using (
         {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
         {{ dbt_scd2_utils.get_valid_from_sql(updated_at_col) }} as {{ valid_from_col }},
         {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col) }} as {{ valid_to_col }},
-        {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col) }} as {{ change_type_col }},
-        {# {{ dbt_scd2_utils.get_created_at_sql(unique_keys_csv, updated_at_col) }} as {{ created_at_col }}, #}
-    from distinct_records
+        {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col) }} as {{ change_type_col }}
+    from changes_only
     ) AS DBT_INTERNAL_SOURCE
 on (
     {# Matching condition for the MERGE: unique key and the updated_at timestamp #}

@@ -45,8 +45,3 @@ models:
           key_columns: [customer_id]
           valid_from_column: _valid_from
           current_column: _is_current
-      
-      - dbt_scd2_utils.created_at_is_earliest_valid_from:
-          key_columns: [customer_id]
-          created_at_column: _created_at
-          valid_from_column: _valid_from

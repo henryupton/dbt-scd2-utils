@@ -13,7 +13,6 @@
   {%- set valid_to_col = config.get('valid_to_column', var('dbt_scd2_utils', {}).get('valid_to_column')) -%}
   {%- set updated_at_col = config.get('updated_at_column', var('dbt_scd2_utils', {}).get('updated_at_column')) -%}
   {%- set change_type_col = config.get('change_type_column', var('dbt_scd2_utils', {}).get('change_type_column')) -%}
-  {%- set created_at_col = config.get('created_at_column', var('dbt_scd2_utils', {}).get('created_at_column')) -%}
 
   {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
 
@@ -49,7 +48,7 @@
   {%- set dest_columns = adapter.get_columns_in_relation(tmp_relation) -%}
   
   {# Get audit column names #}
-  {%- set audit_columns = [is_current_col, valid_from_col, valid_to_col, change_type_col, created_at_col] -%}
+  {%- set audit_columns = [is_current_col, valid_from_col, valid_to_col, change_type_col] -%}
 
   {# Process scd_check_columns with guard pattern and filtering #}
   {%- if scd_check_columns_raw is not none -%}
@@ -101,8 +100,7 @@
       'valid_from_column': valid_from_col,
       'valid_to_column': valid_to_col,
       'updated_at_column': updated_at_col,
-      'change_type_column': change_type_col,
-      'created_at_column': created_at_col
+      'change_type_column': change_type_col
   }  %}
 
   {%- if should_full_refresh -%}

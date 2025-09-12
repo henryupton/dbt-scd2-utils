@@ -30,7 +30,7 @@
     is enabled, it will also exclude any data that arrived after the run started.
 #}
 
-{% macro source(source_name, table_name, loaded_at_col=none) -%}
+{% macro source(source_name, table_name, loaded_at_col=none, target_loaded_at_col='_loaded_at') -%}
   {% set source_relation = builtins.source(source_name, table_name) %}
 
   {% set exclude_data = var('exclude_data_after_run_start', false) %}
@@ -40,7 +40,7 @@
   {% set where_exprs = [] %}
 
   {% if is_incremental_run and has_loaded_at_col %}
-      {% set where_exprs = where_exprs + ["(select max(_loaded_at) from " ~ this ~ ") < " ~ loaded_at_col] %}
+      {% set where_exprs = where_exprs + ["(select max(" ~ target_loaded_at_col ~ ") from " ~ this ~ ") < " ~ loaded_at_col] %}
   {% endif %}
 
   {% if exclude_data and has_loaded_at_col %}

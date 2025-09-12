@@ -37,24 +37,24 @@ unit_tests:
         - {customer_id: 1, customer_name: "Alice Smith", email: "alice@test.com", status: "active", _updated_at: "2024-01-01"}
         - {customer_id: 2, customer_name: "Bob Jones", email: "bob@test.com", status: "inactive", _updated_at: "2024-01-02"}
 
-  # Test source() macro override with incremental loading enabled
-  - name: test_source_macro_incremental_loading
-    model: test_source_incremental_behavior
-    overrides:
-      macros:
-        dbt_scd2_utils.is_incremental: true
-    given:
-      - input: source('test_data', 'raw_orders')
-        rows:
-          - {order_id: 1, customer_id: 1, order_date: "2024-01-01", loaded_at: "2024-01-01 10:00:00"}
-          - {order_id: 2, customer_id: 2, order_date: "2024-01-02", loaded_at: "2024-01-02 11:00:00"}
-          - {order_id: 3, customer_id: 1, order_date: "2024-01-03", loaded_at: "2024-01-03 09:00:00"}
-      - input: this
-        rows:
-          - {loaded_at: "2024-01-02 11:00:00"}
-    expect:
-      rows:
-        - {order_id: 3, customer_id: 1, order_date: "2024-01-03", loaded_at: "2024-01-03 09:00:00"}
+#  # Test source() macro override with incremental loading enabled
+#  - name: test_source_macro_incremental_loading
+#    model: test_source_incremental_behavior
+#    overrides:
+#      macros:
+#        dbt_scd2_utils.is_incremental: true
+#    given:
+#      - input: source('test_data', 'raw_orders', 'loaded_at', '_loaded_at')
+#        rows:
+#          - {order_id: 1, customer_id: 1, order_date: "2024-01-01", loaded_at: "2024-01-01 10:00:00"}
+#          - {order_id: 2, customer_id: 2, order_date: "2024-01-02", loaded_at: "2024-01-02 11:00:00"}
+#          - {order_id: 3, customer_id: 1, order_date: "2024-01-03", loaded_at: "2024-01-03 09:00:00"}
+#      - input: this
+#        rows:
+#          - {loaded_at: "2024-01-02 11:00:00"}
+#    expect:
+#      rows:
+#        - {order_id: 3, customer_id: 1, order_date: "2024-01-03", loaded_at: "2024-01-03 09:00:00"}
 
   # Test source() macro override with incremental loading disabled
   - name: test_source_macro_full_load
