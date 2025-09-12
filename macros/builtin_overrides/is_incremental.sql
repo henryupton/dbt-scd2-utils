@@ -1,19 +1,19 @@
-{%- docs is_incremental -%}
-Override of dbt's built-in is_incremental() macro to support the incremental_scd2 materialization.
+{#
+    Override of dbt's built-in is_incremental() macro to support the incremental_scd2 materialization.
 
-Checks if the current model is running in incremental mode by verifying:
-1. The relation exists
-2. The relation is a table
-3. Not running in full refresh mode
-4. The materialization is either 'incremental' or 'incremental_scd2'
+    Checks if the current model is running in incremental mode by verifying:
+    1. The relation exists
+    2. The relation is a table
+    3. Not running in full refresh mode
+    4. The materialization is either 'incremental' or 'incremental_scd2'
 
-**Returns:**
-- Boolean indicating if the model should run in incremental mode
+    **Returns:**
+    - Boolean indicating if the model should run in incremental mode
 
-**Note:**
-This override extends dbt's standard incremental logic to recognize the custom
-'incremental_scd2' materialization type alongside the standard 'incremental'.
-{%- enddocs -%}
+    **Note:**
+    This override extends dbt's standard incremental logic to recognize the custom
+    'incremental_scd2' materialization type alongside the standard 'incremental'.
+#}
 
 {% macro is_incremental() %}
   {#-- do not run introspective queries in parsing #}

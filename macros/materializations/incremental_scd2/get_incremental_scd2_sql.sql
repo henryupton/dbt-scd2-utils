@@ -139,7 +139,7 @@ using (
         {{ dbt_scd2_utils.get_valid_from_sql(updated_at_col) }} as {{ valid_from_col }},
         {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col) }} as {{ valid_to_col }},
         {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col) }} as {{ change_type_col }},
-        {{ dbt_scd2_utils.get_created_at_sql(unique_keys_csv, updated_at_col) }} as {{ created_at_col }},
+        {# {{ dbt_scd2_utils.get_created_at_sql(unique_keys_csv, updated_at_col) }} as {{ created_at_col }}, #}
     from distinct_records
     ) AS DBT_INTERNAL_SOURCE
 on (
