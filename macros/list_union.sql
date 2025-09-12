@@ -1,25 +1,23 @@
-{%- docs list_union -%}
-Returns the union of any number of lists with deduplication.
+{#
+  Returns the union of any number of lists with deduplication.
 
-**Args:**
-- `lists` (list): A list of lists to union, or individual lists as separate arguments
-- `case_insensitive` (bool, optional): If true, performs case-insensitive comparison. Defaults to false.
+  Args:
+    lists (list): A list of lists to union, or individual lists as separate arguments
+    case_insensitive (bool, optional): If true, performs case-insensitive comparison. Defaults to false.
 
-**Returns:**
-- Combined list with unique elements from all input lists
+  Returns:
+    Combined list with unique elements from all input lists
 
-**Example:**
-```sql
-{{ dbt_scd2_utils.list_union(['a', 'b'], ['B', 'c']) }}
--- Returns: ['a', 'b', 'B', 'c']
+  Example:
+    {{ dbt_scd2_utils.list_union(['a', 'b'], ['B', 'c']) }}
+    -- Returns: ['a', 'b', 'B', 'c']
 
-{{ dbt_scd2_utils.list_union(['a', 'b'], ['B', 'c'], ['C', 'd'], case_insensitive=true) }}
--- Returns: ['a', 'b', 'c', 'd']
+    {{ dbt_scd2_utils.list_union(['a', 'b'], ['B', 'c'], ['C', 'd'], case_insensitive=true) }}
+    -- Returns: ['a', 'b', 'c', 'd']
 
-{{ dbt_scd2_utils.list_union([['a', 'b'], ['B', 'c'], ['C', 'd']], case_insensitive=true) }}
--- Returns: ['a', 'b', 'c', 'd']
-```
-{%- enddocs -%}
+    {{ dbt_scd2_utils.list_union([['a', 'b'], ['B', 'c'], ['C', 'd']], case_insensitive=true) }}
+    -- Returns: ['a', 'b', 'c', 'd']
+#}
 
 {% macro list_union() %}
   {%- set all_args = varargs | list -%}

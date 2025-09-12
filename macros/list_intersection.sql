@@ -1,25 +1,23 @@
-{%- docs list_intersection -%}
-Returns the intersection of any number of lists with deduplication.
+{#
+  Returns the intersection of any number of lists with deduplication.
 
-**Args:**
-- `lists` (list): A list of lists to intersect, or individual lists as separate arguments
-- `case_insensitive` (bool, optional): If true, performs case-insensitive comparison. Defaults to false.
+  Args:
+    lists (list): A list of lists to intersect, or individual lists as separate arguments
+    case_insensitive (bool, optional): If true, performs case-insensitive comparison. Defaults to false.
 
-**Returns:**
-- List containing only elements that appear in all input lists
+  Returns:
+    List containing only elements that appear in all input lists
 
-**Example:**
-```sql
-{{ dbt_scd2_utils.list_intersection(['a', 'b', 'c'], ['B', 'c', 'd']) }}
--- Returns: ['c']
+  Example:
+    {{ dbt_scd2_utils.list_intersection(['a', 'b', 'c'], ['B', 'c', 'd']) }}
+    -- Returns: ['c']
 
-{{ dbt_scd2_utils.list_intersection(['a', 'b', 'c'], ['B', 'c', 'd'], ['c', 'e'], case_insensitive=true) }}
--- Returns: ['c']
+    {{ dbt_scd2_utils.list_intersection(['a', 'b', 'c'], ['B', 'c', 'd'], ['c', 'e'], case_insensitive=true) }}
+    -- Returns: ['c']
 
-{{ dbt_scd2_utils.list_intersection([['a', 'b', 'c'], ['B', 'c', 'd'], ['c', 'e']], case_insensitive=true) }}
--- Returns: ['c']
-```
-{%- enddocs -%}
+    {{ dbt_scd2_utils.list_intersection([['a', 'b', 'c'], ['B', 'c', 'd'], ['c', 'e']], case_insensitive=true) }}
+    -- Returns: ['c']
+#}
 
 {% macro list_intersection() %}
   {%- set all_args = varargs | list -%}

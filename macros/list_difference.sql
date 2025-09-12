@@ -1,23 +1,21 @@
-{%- docs list_difference -%}
-Returns the difference of two lists (elements in first list but not in second) with deduplication.
+{#
+  Returns the difference of two lists (elements in first list but not in second) with deduplication.
 
-**Args:**
-- `list_a` (list): First list
-- `list_b` (list): Second list
-- `case_insensitive` (bool, optional): If true, performs case-insensitive comparison. Defaults to false.
+  Args:
+    list_a (list): First list
+    list_b (list): Second list
+    case_insensitive (bool, optional): If true, performs case-insensitive comparison. Defaults to false.
 
-**Returns:**
-- List containing elements from list_a that are not in list_b
+  Returns:
+    List containing elements from list_a that are not in list_b
 
-**Example:**
-```sql
-{{ dbt_scd2_utils.list_difference(['a', 'b', 'c'], ['B', 'd']) }}
--- Returns: ['a', 'b', 'c']
+  Example:
+    {{ dbt_scd2_utils.list_difference(['a', 'b', 'c'], ['B', 'd']) }}
+    -- Returns: ['a', 'b', 'c']
 
-{{ dbt_scd2_utils.list_difference(['a', 'b', 'c'], ['B', 'd'], case_insensitive=true) }}
--- Returns: ['a', 'c']
-```
-{%- enddocs -%}
+    {{ dbt_scd2_utils.list_difference(['a', 'b', 'c'], ['B', 'd'], case_insensitive=true) }}
+    -- Returns: ['a', 'c']
+#}
 
 {% macro list_difference(list_a, list_b, case_insensitive=false) %}
   {%- set result = [] -%}

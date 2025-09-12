@@ -1,35 +1,35 @@
-{%- docs get_incremental_scd2_sql -%}
-Generates the SQL for incremental SCD Type 2 processing using a MERGE statement.
+{#
+  Generates the SQL for incremental SCD Type 2 processing using a MERGE statement.
 
-This macro creates a complex MERGE statement that handles SCD Type 2 logic by:
-1. Identifying new/changed records from the source
-2. Comparing them with existing records using hash-based change detection
-3. Properly setting SCD audit columns (is_current, valid_from, valid_to, etc.)
-4. Updating expired records and inserting new versions
+  This macro creates a complex MERGE statement that handles SCD Type 2 logic by:
+  1. Identifying new/changed records from the source
+  2. Comparing them with existing records using hash-based change detection
+  3. Properly setting SCD audit columns (is_current, valid_from, valid_to, etc.)
+  4. Updating expired records and inserting new versions
 
-**Args:**
-- `arg_dict` (dict): Configuration dictionary containing:
-  - `target_relation`: The target table to merge into
-  - `temp_relation`: Temporary table with new data
-  - `unique_key`: Array of business key columns
-  - `dest_columns`: Existing table column metadata
-  - `incremental_predicates`: Optional filtering predicates
-  - `is_current_column`: Name of the is_current flag column
-  - `valid_from_column`: Name of the valid_from timestamp column
-  - `valid_to_column`: Name of the valid_to timestamp column
-  - `updated_at_column`: Name of the updated_at timestamp column
-  - `change_type_column`: Name of the change_type column
-  - `scd_check_columns`: Columns to include in change detection hash
+  Args:
+    arg_dict (dict): Configuration dictionary containing:
+      target_relation: The target table to merge into
+      temp_relation: Temporary table with new data
+      unique_key: Array of business key columns
+      dest_columns: Existing table column metadata
+      incremental_predicates: Optional filtering predicates
+      is_current_column: Name of the is_current flag column
+      valid_from_column: Name of the valid_from timestamp column
+      valid_to_column: Name of the valid_to timestamp column
+      updated_at_column: Name of the updated_at timestamp column
+      change_type_column: Name of the change_type column
+      scd_check_columns: Columns to include in change detection hash
 
-**Returns:**
-- Complete MERGE SQL statement for SCD Type 2 incremental processing
+  Returns:
+    Complete MERGE SQL statement for SCD Type 2 incremental processing
 
-**Example:**
-The generated MERGE will handle scenarios like:
-- New customer record → INSERT with is_current=true
-- Changed customer data → UPDATE old record to is_current=false, valid_to to next valid_from, INSERT new version
-- Unchanged customer data → No action (filtered out by hash comparison)
-{%- enddocs -%}
+  Example:
+    The generated MERGE will handle scenarios like:
+    - New customer record → INSERT with is_current=true
+    - Changed customer data → UPDATE old record to is_current=false, valid_to to next valid_from, INSERT new version
+    - Unchanged customer data → No action (filtered out by hash comparison)
+#}
 
 {% macro get_incremental_scd2_sql(arg_dict) %}
     {% set target_relation = arg_dict["target_relation"] %}

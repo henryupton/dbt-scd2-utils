@@ -1,20 +1,20 @@
-{%- docs prefix_array_elements -%}
-Prefixes each element of a list with a given string.
+{#
+  Prefixes each element of a list with a given string.
 
-**Args:**
-- `list_items` (array): Array of strings to prefix
-- `prefix` (string): String to prefix each element with
+  Args:
+    list_items (array): Array of strings to prefix
+    prefix (string): String to prefix each element with
 
-**Returns:**
-- Array: New array with each element prefixed
+  Returns:
+    Array: New array with each element prefixed
 
-**Example:**
-- `prefix_array_elements(["col1", "col2"], "a.")` returns `["a.col1", "a.col2"]`
-- `prefix_array_elements(["customer_id"], "t.")` returns `["t.customer_id"]`
+  Example:
+    prefix_array_elements(["col1", "col2"], "a.") returns ["a.col1", "a.col2"]
+    prefix_array_elements(["customer_id"], "t.") returns ["t.customer_id"]
 
-**Raises:**
-- Compiler error if list_items is not an array or contains non-string elements
-{%- enddocs -%}
+  Raises:
+    Compiler error if list_items is not an array or contains non-string elements
+#}
 
 {%- macro prefix_array_elements(list_items, prefix) -%}
   {%- if not dbt_scd2_utils.is_array(list_items) -%}
