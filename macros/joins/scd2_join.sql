@@ -1,21 +1,21 @@
-{%- docs scd2_join -%}
-Generates SQL for joining multiple SCD Type 2 tables on a temporal spine.
+{#
+    Generates SQL for joining multiple SCD Type 2 tables on a temporal spine.
 
-Creates a temporal spine based on all valid_from and valid_to timestamps from the
-provided relations, then performs temporal joins to reconstruct the state of all
-tables at each point in time.
+    Creates a temporal spine based on all valid_from and valid_to timestamps from the
+    provided relations, then performs temporal joins to reconstruct the state of all
+    tables at each point in time.
 
-**Args:**
-- `relations` (list): List of relation objects to join temporally
-- `join_key` (string): Business key column to join on
+    **Args:**
+    - `relations` (list): List of relation objects to join temporally
+    - `join_key` (string): Business key column to join on
 
-**Returns:**
-- SELECT SQL statement that joins all relations on the temporal spine
+    **Returns:**
+    - SELECT SQL statement that joins all relations on the temporal spine
 
-**Example:**
-For customer and address SCD2 tables, this will create time-based snapshots
-showing how both tables looked at each point when either table changed.
-{%- enddocs -%}
+    **Example:**
+    For customer and address SCD2 tables, this will create time-based snapshots
+    showing how both tables looked at each point when either table changed.
+#}
 
 {% macro scd2_join(relations, join_key) %}
     with
