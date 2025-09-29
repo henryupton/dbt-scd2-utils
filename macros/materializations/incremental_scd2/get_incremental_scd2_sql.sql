@@ -84,13 +84,17 @@ using (
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd2_unique_key, 'p.')) }} as _scd2_key,
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd_check_columns, 'p.')) }} as _scd2_hash,
             from {{ this }} as p
-            inner join new_records as n on {% for col in scd2_unique_key -%}
-                p.{{ col }} = n.{{ col }} {% if not loop.last %} and {% endif %}
-            {%- endfor %}
-            {# We want all previous records which could have been valid when any of the new records occurred. #}
-            {% if not var('dbt_scd2_utils', {}).get('update_all_previous_records', false) %}
-            where n.{{ updated_at_col }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
-            {% endif %}
+            where exists (
+                select 1
+                from new_records as n
+                where {% for col in unique_key -%}
+                    p.{{ col }} = n.{{ col }} {% if not loop.last %} and {% endif %}
+                {%- endfor %}
+                {# We want all previous records which could have been valid when any of the new records occurred. #}
+                {% if not var('dbt_scd2_utils', {}).get('update_all_previous_records', false) %}
+                and n.{{ updated_at_col }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
+                {% endif %}
+            )
         )
         -- select * from previous_record order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 213;
         ,
