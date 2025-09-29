@@ -14,7 +14,30 @@
   {%- set updated_at_col = config.get('updated_at_column', var('dbt_scd2_utils', {}).get('updated_at_column')) -%}
   {%- set change_type_col = config.get('change_type_column', var('dbt_scd2_utils', {}).get('change_type_column')) -%}
 
+  {%- set update_all_previous_records = var('dbt_scd2_utils', {}).get('update_all_previous_records', true) -%}
+
+  {%- if not update_all_previous_records -%}
+    {%- set warning_message -%}
+      update_all_previous_records is set to false for {{ this }}.
+
+      This is a performance optimization that reduces the number of records updated during incremental runs.
+      However, this setting assumes that no new data will arrive with timestamps that predate the earliest
+      record for a given key (i.e., no "backfill" data).
+
+      If backfill data does arrive, it will result in undocumented behavior in the {{ change_type_col }} column,
+      potentially causing multiple records to be marked as 'I' (INSERT) for the same key.
+
+      Only use this setting if you can guarantee that all data arrives in chronological order.
+    {%- endset -%}
+    {{ exceptions.warn(warning_message) }}
+  {%- endif -%}
+
   {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
+  {# Recomputing the change column for every record ensures accuracy. #}
+  {# No updating all previous records results in multiple 'I' records. #}
+  {%- if update_all_previous_records -%}
+    {%- do merge_update_cols.append(change_type_col) -%}
+  {%- endif -%}
 
   {%- set scd_check_columns_raw = config.get('scd_check_columns', none) -%}
   {%- set exclude_columns_from_change_check = config.get('exclude_columns_from_change_check', []) + [updated_at_col] -%}
@@ -122,6 +145,7 @@
       'target_relation': target_relation,
       'merge_update_cols': merge_update_cols,
       'incremental_predicates': config.get('incremental_predicates', []),
+      'update_all_previous_records': update_all_previous_records,
     }) -%}
 
     {%- set build_sql = dbt_scd2_utils.get_incremental_scd2_sql(default_arg_dict) -%}

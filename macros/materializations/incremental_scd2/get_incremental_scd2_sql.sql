@@ -50,6 +50,7 @@
     {%- set updated_at_col = arg_dict['updated_at_column'] -%}
     {%- set change_type_col = arg_dict['change_type_column'] -%}
     {%- set created_at_col = arg_dict['created_at_column'] -%}
+    {%- set update_all_previous_records = arg_dict['update_all_previous_records'] -%}
 
     {# Prepare column lists for the MERGE statement #}
     {%- set unique_keys_csv = dbt_scd2_utils.get_quoted_csv(unique_key | map("upper")) -%}
@@ -91,7 +92,7 @@ using (
                     p.{{ col }} = n.{{ col }} {% if not loop.last %} and {% endif %}
                 {%- endfor %}
                 {# We want all previous records which could have been valid when any of the new records occurred. #}
-                {% if not var('dbt_scd2_utils', {}).get('update_all_previous_records', true) %}
+                {% if not update_all_previous_records %}
                 and n.{{ updated_at_col }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
                 {% endif %}
             )
