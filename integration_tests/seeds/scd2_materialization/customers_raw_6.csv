@@ -1,0 +1,8 @@
+customer_id,customer_name,email,status,_updated_at
+1,John Doe,john.backfill@example.com,ACTIVE,2024-01-01 08:00:00+0000
+2,Jane Smith,jane.backfill@example.com,ACTIVE,2024-01-01 08:00:00+0000
+3,Bob Wilson,bob.backfill@example.com,ACTIVE,2024-01-01 08:00:00+0000
+4,Alice Brown,alice.backfill@example.com,ACTIVE,2024-01-01 08:00:00+0000
+5,Charlie Davis,charlie.backfill@example.com,ACTIVE,2024-01-01 08:00:00+0000
+6,Diana Evans,diana.backfill@example.com,ACTIVE,2024-01-01 08:00:00+0000
+7,Edward Foster,edward.backfill@example.com,ACTIVE,2024-01-01 08:00:00+0000

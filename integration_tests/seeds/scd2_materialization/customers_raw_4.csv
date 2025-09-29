@@ -1,7 +1,33 @@
 customer_id,customer_name,email,status,_updated_at
 1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
 1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
-1,John Doe Jr,john.doe.final@example.com,INACTIVE,2024-01-04 10:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
+1,John Doe Jr,john.doe.temp@example.com,ACTIVE,2024-01-04 09:00:00+0000
 3,Bob Wilson,bob.wilson.updated@example.com,ACTIVE,2024-01-04 10:00:00+0000
 5,Charlie Davis,charlie.davis@example.com,INACTIVE,2024-01-04 10:00:00+0000
 6,Diana Evans,diana@example.com,ACTIVE,2024-01-04 10:00:00+0000
