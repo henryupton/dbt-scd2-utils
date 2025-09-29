@@ -84,7 +84,7 @@ using (
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd2_unique_key, 'p.')) }} as _scd2_key,
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd_check_columns, 'p.')) }} as _scd2_hash,
             from {{ this }} as p
-            inner join new_records as n on {% for col in unique_key -%}
+            inner join new_records as n on {% for col in scd2_unique_key -%}
                 p.{{ col }} = n.{{ col }} {% if not loop.last %} and {% endif %}
             {%- endfor %}
             {# We want all previous records which could have been valid when any of the new records occurred. #}
