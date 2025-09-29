@@ -32,7 +32,6 @@ models:
 tests:
   dbt_scd2_utils_integration_tests:
     +store_failures: true
-    +severity: warn
 
 vars:
   dbt_scd2_utils:
