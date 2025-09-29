@@ -45,3 +45,7 @@ models:
           key_columns: [customer_id]
           valid_from_column: _valid_from
           current_column: _is_current
+
+      - dbt_scd2_utils.one_insert_per_key:
+          key_columns: [customer_id]
+          change_type_column: _change_type
