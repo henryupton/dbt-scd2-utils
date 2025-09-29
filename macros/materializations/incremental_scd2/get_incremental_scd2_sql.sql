@@ -91,7 +91,7 @@ using (
                     p.{{ col }} = n.{{ col }} {% if not loop.last %} and {% endif %}
                 {%- endfor %}
                 {# We want all previous records which could have been valid when any of the new records occurred. #}
-                {% if not var('dbt_scd2_utils', {}).get('update_all_previous_records', false) %}
+                {% if not var('dbt_scd2_utils', {}).get('update_all_previous_records', true) %}
                 and n.{{ updated_at_col }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
                 {% endif %}
             )
@@ -128,30 +128,29 @@ using (
 
         {# Make sure we have only one record for each unique key, updated_at permutation. #}
         {# Prioritise existing record over a new one in the case of a duplicate. Why would something have changed but not produced a new updated_at? #}
+        pick_a_key_any_key as (
+            select
+                *
+            from all_records
+            qualify row_number() over(partition by _scd2_key order by 1) = 1
+        )
+        -- select * from pick_a_key_any_key order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
+        ,
+
         compare_versions as (
             select
                 *,
                 lag(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _prev_hash
-            from all_records
+            from pick_a_key_any_key
         )
         -- select * from compare_versions order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
-        ,
-
-        compare_keys as (
-            select
-                *,
-                row_number() over(partition by _scd2_key order by _prev_hash nulls first) as _key_sequence
-            from compare_versions
-        )
-        -- select * from compare_keys order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
         ,
 
         {# This allows us to ignore changes in a certain subset of columns. #}
         changes_only as (
             select *
-            from compare_keys
-            where _key_sequence = 1
-            and (_prev_hash is null or _scd2_hash != _prev_hash) -- Only if the hash has changed (or is the first record for this key)
+            from compare_versions
+            where (_prev_hash is null or _scd2_hash != _prev_hash) -- Only if the hash has changed (or is the first record for this key)
         )
 
     select

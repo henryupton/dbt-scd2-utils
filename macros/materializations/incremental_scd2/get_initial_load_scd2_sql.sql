@@ -57,31 +57,31 @@ with source_data as (
 
 {# Make sure we have only one record for each unique key, updated_at permutation. #}
 {# Prioritise existing record over a new one in the case of a duplicate. Why would something have changed but not produced a new updated_at? #}
+pick_a_key_any_key as (
+    select
+        *
+    from source_data
+    qualify row_number() over(partition by _scd2_key order by 1) = 1
+)
+-- select * from pick_a_key_any_key order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
+,
+
 compare_versions as (
     select
         *,
         lag(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _prev_hash
-    from source_data
+    from pick_a_key_any_key
 )
 -- select * from compare_versions order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
-,
-
-compare_keys as (
-    select
-        *,
-        row_number() over(partition by _scd2_key order by _prev_hash nulls first) as _key_sequence
-    from compare_versions
-)
--- select * from compare_keys order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
 ,
 
 {# This allows us to ignore changes in a certain subset of columns. #}
 changes_only as (
     select *
-    from compare_keys
-    where _key_sequence = 1
-    and (_prev_hash is null or _scd2_hash != _prev_hash) -- Only if the hash has changed (or is the first record for this key)
+    from compare_versions
+    where (_prev_hash is null or _scd2_hash != _prev_hash) -- Only if the hash has changed (or is the first record for this key)
 )
+-- select * from changes_only order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
 
 select
   {{ dbt_scd2_utils.get_quoted_csv(select_cols) }},
