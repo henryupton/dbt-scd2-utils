@@ -20,21 +20,11 @@
 {% macro scd2_join(relations, join_key) %}
     with
         {# Collect all timestamps from valid_from and valid_to columns across relations #}
-        all_updates as (
+        distinct_updates as (
             {% for relation in relations %}
             select {{ join_key }}, _valid_from::timestamp_tz as _updated_at from {{ relation }}
-            union all
-            select {{ join_key }}, _valid_to::timestamp_tz as _updated_at from {{ relation }}
-            {% if not loop.last %}union all{% endif %}
+            {% if not loop.last %}union{%- endif %}
             {% endfor %}
-        ),
-        
-        {# Remove duplicates and filter out null/future timestamps #}
-        distinct_updates as (
-            select distinct {{ join_key }}, _updated_at
-            from all_updates
-            where _updated_at is not null 
-                and _updated_at != '{{ var('default_valid_to') }}'::timestamp_tz
         ),
         
         {# Create temporal spine with valid_from and valid_to ranges #}
@@ -49,13 +39,13 @@
     
     select
         spine.{{ join_key }},
-        {% for relation in relations %}
-            {% for column in adapter.get_columns_in_relation(relation) %}
-                {% if column.name.upper() != join_key.upper() and column.name.upper() not in ['_VALID_FROM', '_VALID_TO', '_IS_CURRENT', '_UPDATED_AT', '_CHANGE_TYPE'] %}
+        {%- for relation in relations %}
+            {%- for column in adapter.get_columns_in_relation(relation) %}
+                {%- if column.name.upper() != join_key.upper() and column.name.upper() not in ['_VALID_FROM', '_VALID_TO', '_IS_CURRENT', '_UPDATED_AT', '_CHANGE_TYPE'] %}
         {{ relation.name }}.{{ column.name }},
-                {% endif %}
-            {% endfor %}
-        {% endfor %}
+                {%- endif %}
+            {%- endfor %}
+        {%- endfor %}
         spine._is_current,
         spine._valid_from,
         spine._valid_to
