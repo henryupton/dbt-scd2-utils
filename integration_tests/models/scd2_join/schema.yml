@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: customers_with_addresses
+    tests:
+      - dbt_scd2_utils.one_current_per_key:
+          arguments:
+            key_columns: [customer_id]
+            current_column: _is_current
+      - dbt_scd2_utils.latest_row_is_current:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            current_column: _is_current
+      - dbt_scd2_utils.continuous_validity_windows:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+      - dbt_scd2_utils.no_validity_overlaps:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
