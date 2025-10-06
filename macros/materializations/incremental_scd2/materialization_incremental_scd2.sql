@@ -8,13 +8,13 @@
   {% set incremental_predicates = config.get("incremental_predicates", []) %}
 
   {# Get configurable audit column names #}
-  {%- set is_current_col = config.get('is_current_column', var('dbt_scd2_utils', {}).get('is_current_column')) -%}
-  {%- set valid_from_col = config.get('valid_from_column', var('dbt_scd2_utils', {}).get('valid_from_column')) -%}
-  {%- set valid_to_col = config.get('valid_to_column', var('dbt_scd2_utils', {}).get('valid_to_column')) -%}
-  {%- set updated_at_col = config.get('updated_at_column', var('dbt_scd2_utils', {}).get('updated_at_column')) -%}
-  {%- set change_type_col = config.get('change_type_column', var('dbt_scd2_utils', {}).get('change_type_column')) -%}
+  {%- set is_current_col = config.get('is_current_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'is_current_column')) -%}
+  {%- set valid_from_col = config.get('valid_from_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'valid_from_column')) -%}
+  {%- set valid_to_col = config.get('valid_to_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'valid_to_column')) -%}
+  {%- set updated_at_col = config.get('updated_at_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'updated_at_column')) -%}
+  {%- set change_type_col = config.get('change_type_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'change_type_column')) -%}
 
-  {%- set update_all_previous_records = var('dbt_scd2_utils', {}).get('update_all_previous_records', true) -%}
+  {%- set update_all_previous_records = dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'update_all_previous_records', default=true) -%}
 
   {%- if not update_all_previous_records -%}
     {%- set warning_message -%}

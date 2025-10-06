@@ -18,34 +18,41 @@ models:
       
       # SCD2 Data Quality Tests
       - dbt_scd2_utils.one_current_per_key:
-          key_columns: [customer_id]
-          current_column: _is_current
-      
+          arguments:
+            key_columns: [customer_id]
+            current_column: _is_current
+
       - dbt_scd2_utils.no_validity_overlaps:
-          key_columns: [customer_id]
-          valid_from_column: _valid_from
-          valid_to_column: _valid_to
-      
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
       - dbt_scd2_utils.continuous_validity_windows:
-          key_columns: [customer_id]
-          valid_from_column: _valid_from
-          valid_to_column: _valid_to
-      
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
       - dbt_scd2_utils.first_record_insert:
-          key_columns: [customer_id]
-          valid_from_column: _valid_from
-          change_type_column: _change_type
-      
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            change_type_column: _change_type
+
       - dbt_scd2_utils.last_record_update_or_delete:
-          key_columns: [customer_id]
-          valid_from_column: _valid_from
-          change_type_column: _change_type
-      
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            change_type_column: _change_type
+
       - dbt_scd2_utils.latest_row_is_current:
-          key_columns: [customer_id]
-          valid_from_column: _valid_from
-          current_column: _is_current
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            current_column: _is_current
 
       - dbt_scd2_utils.one_insert_per_key:
-          key_columns: [customer_id]
-          change_type_column: _change_type
+          arguments:
+            key_columns: [customer_id]
+            change_type_column: _change_type
