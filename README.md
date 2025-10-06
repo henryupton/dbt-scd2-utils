@@ -28,7 +28,7 @@ Add to your `packages.yml`:
 ```yaml
 packages:
   - package: henryupton/dbt-scd2-utils
-    version: ["1.0.17"]
+    version: ["1.0.18"]
 ```
 
 ### Via Git
@@ -36,7 +36,7 @@ packages:
 ```yaml
 packages:
   - git: "https://github.com/henryupton/dbt-scd2-utils.git"
-    revision: 1.0.17
+    revision: 1.0.18
 ```
 
 Then run:
