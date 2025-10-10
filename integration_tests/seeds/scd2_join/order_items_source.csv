@@ -1,0 +1,6 @@
+customer_id,order_id,item_name,quantity,_updated_at
+1,100,Widget A,2,2024-01-02 00:00:00
+1,100,Widget A,3,2024-01-04 00:00:00
+1,101,Widget B,1,2024-01-10 00:00:00
+2,200,Widget C,5,2024-01-06 00:00:00
+2,200,Widget C,0,2024-01-08 00:00:00

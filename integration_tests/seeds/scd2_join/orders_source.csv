@@ -1,0 +1,7 @@
+customer_id,order_id,order_status,_updated_at
+1,100,pending,2024-01-02 00:00:00
+1,100,processing,2024-01-03 00:00:00
+1,100,shipped,2024-01-05 00:00:00
+1,101,pending,2024-01-10 00:00:00
+2,200,pending,2024-01-06 00:00:00
+2,200,cancelled,2024-01-08 00:00:00
