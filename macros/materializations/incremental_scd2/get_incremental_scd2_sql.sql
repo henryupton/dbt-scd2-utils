@@ -50,6 +50,7 @@
     {%- set updated_at_col = arg_dict['updated_at_column'] -%}
     {%- set change_type_col = arg_dict['change_type_column'] -%}
     {%- set created_at_col = arg_dict['created_at_column'] -%}
+    {%- set deleted_at_col = arg_dict.get('deleted_at_column') -%}
     {%- set update_all_previous_records = arg_dict['update_all_previous_records'] -%}
 
     {# Prepare column lists for the MERGE statement #}
@@ -159,7 +160,7 @@ using (
         {# SCD2 audit columns using reusable macros #}
         {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
         {{ dbt_scd2_utils.get_valid_from_sql(updated_at_col) }} as {{ valid_from_col }},
-        {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col) }} as {{ valid_to_col }},
+        {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col, none, deleted_at_col) }} as {{ valid_to_col }},
         {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col) }} as {{ change_type_col }}
     from changes_only
     ) AS DBT_INTERNAL_SOURCE

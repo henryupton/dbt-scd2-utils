@@ -13,6 +13,7 @@
   {%- set valid_to_col = config.get('valid_to_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'valid_to_column')) -%}
   {%- set updated_at_col = config.get('updated_at_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'updated_at_column')) -%}
   {%- set change_type_col = config.get('change_type_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'change_type_column')) -%}
+  {%- set deleted_at_col = config.get('deleted_at_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'deleted_at_column', default=none)) -%}
 
   {%- set update_all_previous_records = dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'update_all_previous_records', default=true) -%}
 
@@ -41,6 +42,10 @@
 
   {%- set scd_check_columns_raw = config.get('scd_check_columns', none) -%}
   {%- set exclude_columns_from_change_check = config.get('exclude_columns_from_change_check', []) + [updated_at_col] -%}
+  {# Also exclude deleted_at_col from change detection if it's configured #}
+  {%- if deleted_at_col -%}
+    {%- do exclude_columns_from_change_check.append(deleted_at_col) -%}
+  {%- endif -%}
 
   {%- set unique_key = config.get('unique_key') -%}
   {%- set scd2_unique_key = unique_key + [updated_at_col] -%}
@@ -123,7 +128,8 @@
       'valid_from_column': valid_from_col,
       'valid_to_column': valid_to_col,
       'updated_at_column': updated_at_col,
-      'change_type_column': change_type_col
+      'change_type_column': change_type_col,
+      'deleted_at_column': deleted_at_col
   }  %}
 
   {%- if should_full_refresh -%}
