@@ -4,8 +4,10 @@
   Uses the LEAD window function to get the next record's updated_at timestamp as this
   record's valid_to date. For the most current record, uses the default_valid_to value.
 
-  If a deleted_at column is provided and contains a value, that timestamp will be used
-  as the valid_to, effectively closing the record at the deletion time.
+  When a deleted_at column is provided:
+  - For non-deletion records (deleted_at IS NULL): valid_to follows normal logic
+  - For deletion records (deleted_at IS NOT NULL): valid_to is the next record's updated_at
+    or the default future date, allowing the deletion record to span until resurrection or forever
 
   Args:
     unique_keys_csv (string): Comma-separated list of unique key columns for partitioning
@@ -17,26 +19,15 @@
     SQL expression that returns the valid_to timestamp for each record
 
   Example:
-    For a customer with 3 versions (2021-01-01, 2021-06-01, 2021-12-01):
-    - First record valid_to = 2021-06-01 (next record's date)
-    - Second record valid_to = 2021-12-01 (next record's date)
-    - Third record valid_to = 2999-12-31 (default, as it's current)
-
-    If deleted_at is provided and the third record has deleted_at = 2021-12-15:
-    - Third record valid_to = 2021-12-15 (deletion timestamp)
+    For a product with records (2021-01-01, 2021-06-01 [deleted], 2021-12-01):
+    - First record: valid_to = 2021-06-01 (next record's date)
+    - Second record (deleted): valid_to = 2021-12-01 (next record's date, not deleted_at)
+    - Third record (resurrected): valid_to = 2999-12-31 (default, as it's current)
 #}
 
 {% macro get_valid_to_sql(unique_keys_csv, updated_at_col, default_valid_to, deleted_at_col) -%}
-  {%- if deleted_at_col -%}
-  coalesce(
-    {{ deleted_at_col }},
-    lead({{ updated_at_col }}) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}),
-    {{ dbt_scd2_utils.parse_timestamp_literal(var('default_valid_to', '2999-12-31 23:59:59')) }}
-  )
-  {%- else -%}
   coalesce(
     lead({{ updated_at_col }}) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}),
     {{ dbt_scd2_utils.parse_timestamp_literal(var('default_valid_to', '2999-12-31 23:59:59')) }}
   )
-  {%- endif -%}
 {%- endmacro %}

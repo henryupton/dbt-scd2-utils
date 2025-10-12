@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: products_scd2
+    tests:
+      - dbt_scd2_utils.no_records_after_deletion:
+          arguments:
+            key_columns: [product_id]
+            deleted_at_column: deleted_at
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+      - dbt_scd2_utils.one_current_per_key:
+          arguments:
+            key_columns: [product_id]
+            current_column: _is_current
+      - dbt_scd2_utils.no_validity_overlaps:
+          arguments:
+            key_columns: [product_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+      - dbt_scd2_utils.insert_follows_delete:
+          arguments:
+            key_columns: [product_id]
+            change_type_column: _change_type
+            valid_from_column: _valid_from
+      - dbt_scd2_utils.no_consecutive_inserts_or_deletes:
+          arguments:
+            key_columns: [product_id]
+            change_type_column: _change_type
+            valid_from_column: _valid_from

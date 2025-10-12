@@ -42,10 +42,6 @@
 
   {%- set scd_check_columns_raw = config.get('scd_check_columns', none) -%}
   {%- set exclude_columns_from_change_check = config.get('exclude_columns_from_change_check', []) + [updated_at_col] -%}
-  {# Also exclude deleted_at_col from change detection if it's configured #}
-  {%- if deleted_at_col -%}
-    {%- do exclude_columns_from_change_check.append(deleted_at_col) -%}
-  {%- endif -%}
 
   {%- set unique_key = config.get('unique_key') -%}
   {%- set scd2_unique_key = unique_key + [updated_at_col] -%}
