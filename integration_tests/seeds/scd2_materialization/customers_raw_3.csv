@@ -1,5 +1,6 @@
-customer_id,customer_name,email,status,_updated_at
-1,John Doe Jr,john.doe.new@example.com,ACTIVE,2024-01-03 10:00:00+0000
-2,Jane Smith,jane@example.com,ACTIVE,2024-01-03 10:00:00+0000
-4,Alice Brown,alice.brown@example.com,INACTIVE,2024-01-03 10:00:00+0000
-5,Charlie Davis,charlie@example.com,ACTIVE,2024-01-03 10:00:00+0000
+customer_id,customer_name,email,status,deleted_at,_updated_at
+1,John Doe Jr,john.doe.new@example.com,ACTIVE,2024-01-03 10:00:00+0000,2024-01-03 10:00:00+0000
+2,Jane Smith,jane@example.com,ACTIVE,,2024-01-03 10:00:00+0000
+4,Alice Brown,alice.brown@example.com,INACTIVE,,2024-01-03 10:00:00+0000
+5,Charlie Davis,charlie@example.com,ACTIVE,,2024-01-03 10:00:00+0000
+10,Multi Delete,multidelete@example.com,ACTIVE,2024-01-03 10:00:00+0000,2024-01-03 10:00:00+0000

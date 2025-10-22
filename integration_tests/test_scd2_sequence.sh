@@ -23,11 +23,6 @@ VARIABLE_CONFIGS='{
     "dbt_scd2_utils": {
       "update_all_previous_records": true
     }
-  },
-  "update_all_false": {
-    "dbt_scd2_utils": {
-      "update_all_previous_records": false
-    }
   }
 }'
 

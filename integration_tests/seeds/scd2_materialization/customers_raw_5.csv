@@ -1,7 +1,7 @@
-customer_id,customer_name,email,status,_updated_at
-1,John Doe,late.john@example.com,INACTIVE,2024-01-03 10:00:01+0000
-2,Jane Smith,jane.retroactive@example.com,INACTIVE,2024-01-04 15:00:00+0000
-2,Jane Smith-Johnson,jane.married@example.com,ACTIVE,2024-01-05 10:00:00+0000
-4,Alice Brown,alice.brown.new@example.com,ACTIVE,2024-01-05 10:00:00+0000
-6,Diana Evans,diana.evans@example.com,INACTIVE,2024-01-05 10:00:00+0000
-7,Edward Foster,edward@example.com,ACTIVE,2024-01-05 10:00:00+0000
+customer_id,customer_name,email,status,deleted_at,_updated_at
+1,John Doe,late.john@example.com,INACTIVE,,2024-01-03 10:00:01+0000
+2,Jane Smith,jane.retroactive@example.com,INACTIVE,,2024-01-04 15:00:00+0000
+2,Jane Smith-Johnson,jane.married@example.com,ACTIVE,,2024-01-05 10:00:00+0000
+4,Alice Brown,alice.brown.new@example.com,ACTIVE,,2024-01-05 10:00:00+0000
+6,Diana Evans,diana.evans@example.com,INACTIVE,,2024-01-05 10:00:00+0000
+7,Edward Foster,edward@example.com,ACTIVE,,2024-01-05 10:00:00+0000

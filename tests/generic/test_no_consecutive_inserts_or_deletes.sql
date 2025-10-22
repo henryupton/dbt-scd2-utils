@@ -4,8 +4,9 @@
 
     This test verifies proper change type sequencing:
     - Insert ('I') must be followed by Update ('U') or Delete ('D'), never another Insert
-    - Delete ('D') must be followed by Insert ('I'), never another Delete or Update
-    - Update ('U') can be followed by Update, Insert (invalid - caught by other check), or Delete
+    - Delete ('D') can be followed by Insert ('I') for resurrection, or another Delete ('D') for multiple deletion events
+    - Delete ('D') must NOT be followed by Update ('U') - resurrections must use Insert
+    - Update ('U') can be followed by Update, or Delete
 
     Args:
         model: The model to test
@@ -16,16 +17,15 @@
     Example:
         Invalid sequences:
         - 'I' followed by 'I' (should have 'U' or 'D' between)
-        - 'D' followed by 'D' (should have 'I' for resurrection)
         - 'D' followed by 'U' (should have 'I' for resurrection)
 
         Valid sequences:
-        - 'I' -> 'U' -> 'D' -> 'I' -> 'U'
+        - 'I' -> 'U' -> 'D' -> 'I' -> 'U' (normal with resurrection)
+        - 'I' -> 'U' -> 'D' -> 'D' (multiple deletion events)
 #}
 
 {%- set invalid_sequences = [
     ('I', 'I', 'Consecutive INSERTs detected'),
-    ('D', 'D', 'Consecutive DELETEs detected'),
     ('D', 'U', 'DELETE followed by UPDATE (should be INSERT for resurrection)')
 ] -%}
 

@@ -40,12 +40,6 @@ models:
             valid_from_column: _valid_from
             change_type_column: _change_type
 
-      - dbt_scd2_utils.last_record_update_or_delete:
-          arguments:
-            key_columns: [customer_id]
-            valid_from_column: _valid_from
-            change_type_column: _change_type
-
       - dbt_scd2_utils.latest_row_is_current:
           arguments:
             key_columns: [customer_id]
