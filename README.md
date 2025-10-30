@@ -64,7 +64,9 @@ from {{ source('raw', 'customers') }}
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `unique_key` | ✅ | - | Business key columns (array) |
-| `scd_check_columns` | ❌ | all columns | Columns to track for changes |
+| `change_columns` | ❌ | all columns | Object with `include` and `exclude` arrays to control which columns trigger changes |
+| `scd_check_columns` | ❌ | all columns | **(Legacy)** Columns to track for changes |
+| `exclude_columns_from_change_check` | ❌ | `[]` | **(Legacy)** Columns to exclude from change tracking |
 | `deleted_at_column` | ❌ | none | Column for logical deletion tracking |
 
 ### Audit Column Names
@@ -88,6 +90,99 @@ vars:
     valid_from_column: "eff_start_date"
     valid_to_column: "eff_end_date"
     default_valid_to: "2999-12-31 23:59:59"
+```
+
+### Change Column Configuration
+
+Control which columns trigger SCD2 changes using the `change_columns` object:
+
+```sql
+{{
+  config(
+    materialized='incremental_scd2',
+    unique_key=['customer_id'],
+    change_columns={
+      'include': ['customer_name', 'email', 'status'],
+      'exclude': ['last_login_at', '_metadata']
+    }
+  )
+}}
+
+select
+    customer_id,
+    customer_name,
+    email,
+    status,
+    last_login_at,  -- excluded: won't trigger new SCD2 versions
+    _metadata,      -- excluded: won't trigger new SCD2 versions
+    updated_at as _updated_at
+from {{ source('raw', 'customers') }}
+```
+
+**How it works:**
+- **`include`**: Explicitly specify which columns should be tracked for changes
+  - If provided, only these columns will trigger new SCD2 versions
+  - Automatically filters to columns that exist in your table
+  - Still excludes any columns in the `exclude` array
+
+- **`exclude`**: Specify columns to ignore when detecting changes
+  - Useful for metadata or system columns that change frequently
+  - The `updated_at_column` is automatically excluded (always)
+  - Works with or without the `include` array
+
+**Examples:**
+
+```sql
+-- Track only specific columns
+{{
+  config(
+    materialized='incremental_scd2',
+    unique_key=['product_id'],
+    change_columns={
+      'include': ['name', 'price', 'description']
+    }
+  )
+}}
+
+-- Exclude specific columns (track all others)
+{{
+  config(
+    materialized='incremental_scd2',
+    unique_key=['order_id'],
+    change_columns={
+      'exclude': ['_synced_at', '_batch_id']
+    }
+  )
+}}
+
+-- Combine both approaches
+{{
+  config(
+    materialized='incremental_scd2',
+    unique_key=['user_id'],
+    change_columns={
+      'include': ['name', 'email', 'role', 'department'],
+      'exclude': ['last_seen_at']  -- even if in include, this will be excluded
+    }
+  )
+}}
+```
+
+**Backwards Compatibility:**
+
+The legacy configuration options are still supported:
+- `scd_check_columns`: equivalent to `change_columns.include`
+- `exclude_columns_from_change_check`: equivalent to `change_columns.exclude`
+
+If you use the new `change_columns` object, it takes precedence over the legacy options. Both approaches work identically:
+
+```sql
+-- New approach (recommended)
+change_columns={'include': ['name', 'email'], 'exclude': ['metadata']}
+
+-- Legacy approach (still supported)
+scd_check_columns=['name', 'email'],
+exclude_columns_from_change_check=['metadata']
 ```
 
 ## Deletion Support
