@@ -45,8 +45,9 @@
 
   {# Backwards compatibility: use old config if change_columns is not provided #}
   {%- if change_columns_config is not none -%}
-    {%- set scd_check_columns_raw = dbt_scd2_utils.get_from_object(change_columns_config, 'include', none) -%}
-    {%- set exclude_columns_from_change_check = dbt_scd2_utils.get_from_object(change_columns_config, 'exclude', []) + [updated_at_col] -%}
+    {%- set scd_check_columns_raw = dbt_scd2_utils.get_from_object(change_columns_config, 'include', default=none) -%}
+    {%- set exclude_columns_from_change_check_raw = dbt_scd2_utils.get_from_object(change_columns_config, 'exclude', default=[]) -%}
+    {%- set exclude_columns_from_change_check = (exclude_columns_from_change_check_raw or []) + [updated_at_col] -%}
   {%- else -%}
     {# Fall back to legacy configuration names #}
     {%- set scd_check_columns_raw = config.get('scd_check_columns', none) -%}
