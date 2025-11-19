@@ -15,5 +15,5 @@
 #}
 
 {% macro get_valid_from_sql(updated_at_col) -%}
-  {{ updated_at_col }}
+  {{ updated_at_col }}::timestamp_tz
 {%- endmacro %}
