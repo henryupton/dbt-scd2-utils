@@ -13,7 +13,7 @@
   {%- set valid_to_col = config.get('valid_to_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'valid_to_column')) -%}
   {%- set updated_at_col = config.get('updated_at_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'updated_at_column')) -%}
   {%- set change_type_col = config.get('change_type_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'change_type_column')) -%}
-  {%- set deleted_at_col = config.get('deleted_at_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'deleted_at_column', default=none)) -%}
+  {%- set deleted_at_col = dbt_scd2_utils.get_config_value(config, 'deleted_at_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'deleted_at_column', default=none)) -%}
 
   {%- set update_all_previous_records = dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'update_all_previous_records', default=true) -%}
 
@@ -41,7 +41,7 @@
   {%- endif -%}
 
   {# New configuration approach with change_columns object #}
-  {%- set change_columns_config = config.get('change_columns', none) -%}
+  {%- set change_columns_config = dbt_scd2_utils.get_config_value(config, 'change_columns', default=none) -%}
 
   {# Backwards compatibility: use old config if change_columns is not provided #}
   {%- if change_columns_config is not none -%}
@@ -50,8 +50,8 @@
     {%- set exclude_columns_from_change_check = (exclude_columns_from_change_check_raw or []) + [updated_at_col] -%}
   {%- else -%}
     {# Fall back to legacy configuration names #}
-    {%- set scd_check_columns_raw = config.get('scd_check_columns', none) -%}
-    {%- set exclude_columns_from_change_check = config.get('exclude_columns_from_change_check', []) + [updated_at_col] -%}
+    {%- set scd_check_columns_raw = dbt_scd2_utils.get_config_value(config, 'scd_check_columns', default=none) -%}
+    {%- set exclude_columns_from_change_check = dbt_scd2_utils.get_config_value(config, 'exclude_columns_from_change_check', default=[]) + [updated_at_col] -%}
   {%- endif -%}
 
   {%- set unique_key = config.get('unique_key') -%}
