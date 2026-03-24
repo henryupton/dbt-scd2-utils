@@ -36,7 +36,7 @@
             select
                 {{ join_keys_csv }},
                 {{ dbt_scd2_utils.get_is_current_sql(join_keys_csv, '_updated_at') }} as _is_current,
-                {{ dbt_scd2_utils.get_valid_from_sql('_updated_at') }} as _valid_from,
+                {{ dbt_scd2_utils.get_valid_from_sql(join_keys_csv, '_updated_at') }} as _valid_from,
                 {{ dbt_scd2_utils.get_valid_to_sql(join_keys_csv, '_updated_at', var('default_valid_to')) }} as _valid_to
             from distinct_updates
         )
