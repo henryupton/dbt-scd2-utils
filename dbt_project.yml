@@ -29,7 +29,6 @@ vars:
     valid_from_column: _valid_from
     valid_to_column: _valid_to
     change_type_column: _change_type
-    created_at_column: _created_at
     # Default valid_to date for current records
     default_valid_to: "2999-12-31 23:59:59"
     # Default valid_from date for initial incremental loads
