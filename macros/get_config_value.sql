@@ -21,12 +21,12 @@
 {% macro get_config_value(config, key) %}
   {%- set default = kwargs.get('default', none) -%}
 
-  {# First check meta block #}
-  {%- set meta = config.get('meta', {}) -%}
-  {%- if meta is mapping and key in meta -%}
-    {{ return(meta[key]) }}
+  {# First check meta block via meta_get (avoids the dbt deprecation warning fired by config.get for custom keys). #}
+  {%- set meta_value = config.meta_get(key) -%}
+  {%- if meta_value is not none -%}
+    {{ return(meta_value) }}
   {%- endif -%}
 
-  {# Fall back to top-level config #}
+  {# Fall back to top-level config for users still declaring custom keys outside of meta. #}
   {{ return(config.get(key, default)) }}
 {% endmacro %}

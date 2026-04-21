@@ -8,11 +8,11 @@
   {% set incremental_predicates = config.get("incremental_predicates", []) %}
 
   {# Get configurable audit column names #}
-  {%- set is_current_col = config.get('is_current_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'is_current_column')) -%}
-  {%- set valid_from_col = config.get('valid_from_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'valid_from_column')) -%}
-  {%- set valid_to_col = config.get('valid_to_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'valid_to_column')) -%}
-  {%- set updated_at_col = config.get('updated_at_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'updated_at_column')) -%}
-  {%- set change_type_col = config.get('change_type_column', dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'change_type_column')) -%}
+  {%- set is_current_col = dbt_scd2_utils.get_config_value(config, 'is_current_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'is_current_column')) -%}
+  {%- set valid_from_col = dbt_scd2_utils.get_config_value(config, 'valid_from_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'valid_from_column')) -%}
+  {%- set valid_to_col = dbt_scd2_utils.get_config_value(config, 'valid_to_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'valid_to_column')) -%}
+  {%- set updated_at_col = dbt_scd2_utils.get_config_value(config, 'updated_at_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'updated_at_column')) -%}
+  {%- set change_type_col = dbt_scd2_utils.get_config_value(config, 'change_type_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'change_type_column')) -%}
   {%- set created_at_col = dbt_scd2_utils.get_config_value(config, 'created_at_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'created_at_column', default=none)) -%}
   {%- set deleted_at_col = dbt_scd2_utils.get_config_value(config, 'deleted_at_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'deleted_at_column', default=none)) -%}
 
