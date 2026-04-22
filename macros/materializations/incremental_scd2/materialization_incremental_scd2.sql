@@ -78,7 +78,7 @@
 
   {# Build the temp table with source data #}
   {%- call statement('build_temp_table') -%}
-    {{ create_table_as(True, tmp_relation, sql) }}
+    {{ dbt_scd2_utils.create_temp_table_as(tmp_relation, sql) }}
   {%- endcall -%}
 
   {%- set dest_columns = adapter.get_columns_in_relation(tmp_relation) -%}

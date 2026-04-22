@@ -57,3 +57,36 @@ models:
             key_columns: [customer_id]
             change_type_column: _change_type
             valid_from_column: _valid_from
+
+  - name: customers_scd2_contract
+    description: >
+      Regression test for contract enforcement on the incremental_scd2
+      materialization. The temp delta relation no longer triggers contract
+      checks; the final relation's columns (including audit columns) must
+      still match this YAML.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: customer_id
+        data_type: number
+      - name: customer_name
+        data_type: varchar
+      - name: email
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: deleted_at
+        data_type: timestamp_tz
+      - name: _updated_at
+        data_type: timestamp_tz
+      - name: _written_at
+        data_type: timestamp_ntz
+      - name: _is_current
+        data_type: boolean
+      - name: _valid_from
+        data_type: timestamp_tz
+      - name: _valid_to
+        data_type: timestamp_tz
+      - name: _change_type
+        data_type: varchar
