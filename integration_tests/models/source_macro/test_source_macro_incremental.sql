@@ -2,7 +2,7 @@
     config(
         materialized='incremental',
         unique_key='transaction_id',
-        vars={
+        meta={
             'exclude_data_after_run_start': true
         }
     )

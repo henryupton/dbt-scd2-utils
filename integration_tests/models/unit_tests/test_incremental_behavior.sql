@@ -2,7 +2,11 @@
     config(
         materialized='incremental_scd2',
         unique_key=['customer_id'],
-        scd_check_columns=['customer_name', 'email', 'status']
+        meta={
+            'change_columns': {
+                'include': ['customer_name', 'email', 'status']
+            }
+        }
     )
 }}
 

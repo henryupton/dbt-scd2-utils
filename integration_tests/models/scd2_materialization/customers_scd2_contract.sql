@@ -2,9 +2,13 @@
     config(
         materialized='incremental_scd2',
         unique_key=['customer_id'],
-        exclude_columns_from_change_check=['_written_at'],
-        deleted_at_column='deleted_at',
-        contract={'enforced': true}
+        contract={'enforced': true},
+        meta={
+            'change_columns': {
+                'exclude': ['_written_at']
+            },
+            'deleted_at_column': 'deleted_at'
+        }
     )
 }}
 

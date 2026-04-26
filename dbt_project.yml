@@ -20,6 +20,8 @@ clean-targets:
 dispatch:
   - macro_namespace: dbt_scd2_utils
     search_order: ['dbt_scd2_utils', 'dbt']
+  - macro_namespace: dbt
+    search_order: ['dbt_scd2_utils', 'dbt']
 
 vars:
   dbt_scd2_utils:
@@ -38,5 +40,3 @@ vars:
     # When true, bring all previous versions of a record in for processing when a change is detected
     # Slower but guarantees created_at and change_type are always correct
     update_all_previous_records: true
-    scd_check_columns: ["customer_name", "email"]
-#    exclude_columns_from_change_check: ["status"]

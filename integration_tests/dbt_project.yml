@@ -4,7 +4,10 @@ config-version: 2
 
 require-dbt-version: [">=1.0.0"]
 
-profile: 'integration_tests'
+dbt-cloud:
+  project-id: 18818 # Project Recast
+
+#profile: 'integration_tests'
 
 model-paths: ["models"]
 analysis-paths: ["analysis"]
@@ -22,8 +25,8 @@ flags:
   send_anonymous_usage_stats: false
 
 seeds:
-  quote_columns: false
   dbt_scd2_utils_integration_tests:
+    +quote_columns: false
 
 models:
   dbt_scd2_utils_integration_tests:
