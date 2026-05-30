@@ -1,6 +1,6 @@
 # dbt SCD2 Utils
 
-A dbt package providing a custom materialization for Slowly Changing Dimension (SCD) Type 2 tables in Snowflake.
+A dbt package providing custom materializations for Slowly Changing Dimension (SCD) tables in Snowflake — full temporal history (Type 2) and current-snapshot (Type 1), with a shared audit-column signature.
 
 [![dbt Hub](https://img.shields.io/badge/dbt-Hub-FF6849)](https://hub.getdbt.com)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -8,6 +8,7 @@ A dbt package providing a custom materialization for Slowly Changing Dimension (
 
 ## Features
 
+- **Generic SCD Materialization**: `scd` with `scd_type` (0, 1 or 2) — insert-only, current-snapshot, and full-history all share the same audit columns
 - **Custom SCD2 Materialization**: `incremental_scd2` materialization with automatic versioning
 - **Snowflake Optimized**: Native MERGE statements and TIMESTAMP_TZ types
 - **Automatic Audit Columns**: `_IS_CURRENT`, `_VALID_FROM`, `_VALID_TO`, `_CHANGE_TYPE`
@@ -57,12 +58,74 @@ from {{ source('raw', 'customers') }}
 | 123 | John | john@old.com | false | 2023-01-01 | 2023-06-15 | I |
 | 123 | John | john@new.com | true | 2023-06-15 | 2999-12-31 | U |
 
+## SCD Types
+
+Use the generic `scd` materialization and pick a type with `scd_type` (defaults to `2`). All types emit the same audit columns (`_is_current`, `_valid_from`, `_valid_to`, `_change_type`), so every dimension shares one table signature regardless of type.
+
+| | Type 0 | Type 1 | Type 2 (default) |
+|---|---|---|---|
+| Rows per key | Exactly one (immutable) | Exactly one (current snapshot) | One per version (full history) |
+| On change | No action (original retained) | Overwrite in place | Expire old version, insert new |
+| Merge | `unique_key`, insert only | `unique_key`, upsert | `unique_key` + `updated_at` |
+| `_is_current` | always `true` | always `true` | `true` only on latest version |
+| `_valid_from` | first-seen, fixed | first-seen, preserved | start of each version |
+| `_valid_to` | always `default_valid_to` | always `default_valid_to` | next version's start, else `default_valid_to` |
+| `_change_type` | always `I` | always `I` | `I` / `U` / `D` |
+| `deleted_at_column` | not supported | not supported | supported |
+
+Types 0 and 1 do no change detection, so `change_columns` and `deleted_at_column` don't apply (setting `deleted_at_column` raises a compiler error).
+
+### SCD Type 1
+
+Efficient for high-cardinality dimensions that don't change much over time — `dim_page`, `dim_session` — where you want one row per entity but still want the audit columns for a consistent signature:
+
+```sql
+-- models/dim_page.sql
+{{
+  config(
+    materialized='scd',
+    scd_type=1,
+    unique_key=['page_id']
+  )
+}}
+
+select
+    page_id,
+    url,
+    page_type,
+    updated_at as _updated_at
+from {{ source('raw', 'pages') }}
+```
+
+Type 1 does a straight `MERGE` on the business key: new keys are inserted and existing keys are overwritten with the latest values, with the audit columns kept consistent (`_is_current = true`, `_change_type = 'I'`, `_valid_from` preserved).
+
+### SCD Type 0
+
+Insert-only: the original (first-seen) value is retained and never updated. Identical to Type 1 except the merge has no `when matched` clause, so existing keys are left untouched. Useful for write-once reference data.
+
+```sql
+{{ config(materialized='scd', scd_type=0, unique_key=['page_id']) }}
+```
+
+> **Note:** As with any incremental model, filter your source with `is_incremental()` so each run only processes new/changed rows. Pointing Type 0 or 1 at an unfiltered full-table source will re-scan every row on every run.
+
+### SCD Type 2
+
+`scd_type=2` (the default) gives the full temporal history described throughout this README. The original `incremental_scd2` materialization is retained as a backwards-compatible alias — it behaves identically to `scd` with `scd_type=2`, so existing models need no changes.
+
+```sql
+-- equivalent
+{{ config(materialized='incremental_scd2', unique_key=['customer_id']) }}
+{{ config(materialized='scd', scd_type=2, unique_key=['customer_id']) }}
+```
+
 ## Configuration
 
 ### Core Options
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
+| `scd_type` | ❌ | `2` | SCD type for the `scd` materialization (`0`, `1` or `2`) |
 | `unique_key` | ✅ | - | Business key columns (array) |
 | `change_columns` | ❌ | all columns | Object with `include` and `exclude` arrays to control which columns trigger changes |
 | `scd_check_columns` | ❌ | all columns | **(Legacy)** Columns to track for changes |
@@ -294,6 +357,7 @@ models:
 - `insert_follows_delete`: Resurrections marked as 'I'
 - `no_consecutive_inserts_or_deletes`: Valid change type sequences
 - `no_records_after_deletion`: Deletion records have correct valid_from
+- `all_records_current`: Every row is current (SCD Type 1 invariant)
 
 ## Change Types
 

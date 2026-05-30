@@ -5,14 +5,14 @@
     1. The relation exists
     2. The relation is a table
     3. Not running in full refresh mode
-    4. The materialization is either 'incremental' or 'incremental_scd2'
+    4. The materialization is 'incremental', 'incremental_scd2' or 'scd'
 
     **Returns:**
     - Boolean indicating if the model should run in incremental mode
 
     **Note:**
     This override extends dbt's standard incremental logic to recognize the custom
-    'incremental_scd2' materialization type alongside the standard 'incremental'.
+    'scd' and 'incremental_scd2' materialization types alongside the standard 'incremental'.
 #}
 
 {% macro is_incremental() %}
@@ -21,9 +21,9 @@
     {{ return(False) }}
   {%- else -%}
     {%- set relation = load_relation(this) -%}
-    {{ return(relation is not none 
-              and relation.type == 'table' 
+    {{ return(relation is not none
+              and relation.type == 'table'
               and not should_full_refresh()
-              and (config.get('materialized') in ('incremental', 'incremental_scd2'))) }}
+              and (config.get('materialized') in ('incremental', 'incremental_scd2', 'scd'))) }}
   {%- endif -%}
 {%- endmacro -%}
