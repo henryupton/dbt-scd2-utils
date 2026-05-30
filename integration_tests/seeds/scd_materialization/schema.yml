@@ -1,0 +1,20 @@
+version: 2
+
+seeds:
+  - name: customers_scd0_expected_1
+    description: Expected current state of customers_scd0 after the initial load (customers_raw_1).
+    config: &scd_expected_config
+      column_types:
+        customer_id: integer
+        customer_name: varchar
+        email: varchar
+        status: varchar
+  - name: customers_scd0_expected_2
+    description: Expected current state of customers_scd0 after loading customers_raw_1 then customers_raw_2.
+    config: *scd_expected_config
+  - name: customers_scd1_expected_1
+    description: Expected current state of customers_scd1 after the initial load (customers_raw_1).
+    config: *scd_expected_config
+  - name: customers_scd1_expected_2
+    description: Expected current state of customers_scd1 after loading customers_raw_1 then customers_raw_2.
+    config: *scd_expected_config

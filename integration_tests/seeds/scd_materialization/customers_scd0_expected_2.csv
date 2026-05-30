@@ -1,0 +1,7 @@
+customer_id,customer_name,email,status
+1,John Doe,john@example.com,INACTIVE
+2,Jane Smith,jane@example.com,ACTIVE
+3,Bob Wilson,bob@example.com,INACTIVE
+4,Alice Brown,alice@example.com,ACTIVE
+9,Full Lifecycle,lifecycle@example.com,ACTIVE
+10,Multi Delete,multidelete@example.com,ACTIVE
