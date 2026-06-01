@@ -358,6 +358,7 @@ models:
 - `no_consecutive_inserts_or_deletes`: Valid change type sequences
 - `no_records_after_deletion`: Deletion records have correct valid_from
 - `all_records_current`: Every row is current (SCD Type 1 invariant)
+- `valid_window_well_formed`: `valid_from` is before `valid_to`, neither null (all types)
 
 ## Change Types
 

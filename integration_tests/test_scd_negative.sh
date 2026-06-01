@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #
-# Negative test for the scd materialization.
+# Negative tests for the scd materialization.
 #
-# Setting deleted_at_column on an SCD type 0 or 1 model must raise a compiler
-# error. The offending model (customers_scd1_deleted_at_invalid) is disabled by
-# default via enabled=var('run_negative_tests', false), so it never affects normal
-# runs. This script enables it and asserts that the run fails with the expected
-# error.
+# Each fixture model is a misconfiguration that must raise a compiler error, and
+# is disabled by default via enabled=var('run_negative_tests', false) so it never
+# affects normal runs. This script enables them and asserts each one fails with
+# its expected error message.
+#
+#   - customers_scd1_deleted_at_invalid : deleted_at_column on a type 0/1 model
+#   - customers_scd_invalid_type        : an unsupported scd_type (3)
 #
 # Usage:
 #   ./test_scd_negative.sh [profile]
@@ -16,27 +18,33 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 PROFILE="${1:-}"
-EXPECTED="deletion tracking is not supported for SCD types 0 and 1"
-MODEL="customers_scd1_deleted_at_invalid"
 
-echo "[negative-test] Running ${MODEL} (expecting failure)..."
-output=$(dbt run \
-    --select "${MODEL}" \
-    --vars 'run_negative_tests: true' \
-    ${PROFILE:+--profile "${PROFILE}"} 2>&1)
-code=$?
-echo "${output}"
-echo "----------------------------------------"
+# Each case: "<model>:::<expected error substring>"
+CASES=(
+    "customers_scd1_deleted_at_invalid:::deletion tracking is not supported for SCD types 0 and 1"
+    "customers_scd_invalid_type:::scd_type must be 0, 1 or 2"
+)
 
-if [ "${code}" -eq 0 ]; then
-    echo "[negative-test] FAIL: model built successfully but should have raised a compiler error."
-    exit 1
-fi
+rc=0
+for case in "${CASES[@]}"; do
+    model="${case%%:::*}"
+    expected="${case##*:::}"
+    echo "[negative-test] Running ${model} (expecting failure)..."
+    output=$(dbt run \
+        --select "${model}" \
+        --vars 'run_negative_tests: true' \
+        ${PROFILE:+--profile "${PROFILE}"} 2>&1)
+    code=$?
+    if [ "${code}" -eq 0 ]; then
+        echo "[negative-test] FAIL (${model}): built successfully but should have raised a compiler error."
+        rc=1
+    elif echo "${output}" | grep -q "${expected}"; then
+        echo "[negative-test] PASS (${model}): failed with the expected error."
+    else
+        echo "[negative-test] FAIL (${model}): failed, but not with the expected message:"
+        echo "${output}" | tail -5
+        rc=1
+    fi
+done
 
-if echo "${output}" | grep -q "${EXPECTED}"; then
-    echo "[negative-test] PASS: model failed with the expected deleted_at error."
-    exit 0
-fi
-
-echo "[negative-test] FAIL: model failed, but not with the expected error message."
-exit 1
+exit "${rc}"

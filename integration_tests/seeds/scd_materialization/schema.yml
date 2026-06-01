@@ -9,6 +9,7 @@ seeds:
         customer_name: varchar
         email: varchar
         status: varchar
+        _valid_from: timestamp_tz
   - name: customers_scd0_expected_2
     description: Expected current state of customers_scd0 after loading customers_raw_1 then customers_raw_2.
     config: *scd_expected_config
