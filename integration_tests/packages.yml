@@ -1,4 +1,10 @@
 packages:
+  # Local path so dbt Core integration runs test the working copy of the package.
+  # Note: the dbt Cloud CLI runs server-side and only uploads the project directory,
+  # so it cannot resolve a local path above it. To run the suite through the Cloud
+  # CLI, swap this for a git ref of the package, e.g.:
+  #   - git: "https://github.com/henryupton/dbt-scd2-utils.git"
+  #     revision: "{{ env_var('DBT_SCD2_UTILS_REF', 'main') }}"
   - local: ../
 
   - package: dbt-labs/dbt_utils

@@ -5,7 +5,10 @@ config-version: 2
 require-dbt-version: [">=1.0.0"]
 
 dbt-cloud:
-  project-id: 18818 # Project Recast
+  # Sourced from the environment so the internal dbt Cloud project id is not
+  # committed to this repo. Set DBT_CLOUD_PROJECT_ID before running via the
+  # dbt Cloud CLI, e.g. `export DBT_CLOUD_PROJECT_ID=...`.
+  project-id: "{{ env_var('DBT_CLOUD_PROJECT_ID', '') }}"
 
 #profile: 'integration_tests'
 
