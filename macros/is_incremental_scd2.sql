@@ -25,9 +25,13 @@
     {{ return(False) }}
   {%- else -%}
     {%- set relation = load_relation(this) -%}
-    {{ return(relation is not none 
-              and relation.type == 'table' 
+    {%- set materialized = config.get('materialized') -%}
+    {%- set is_scd2 = materialized == 'incremental_scd2'
+          or (materialized == 'scd'
+              and (dbt_scd2_utils.get_config_value(config, 'scd_type', default=2) | int) == 2) -%}
+    {{ return(relation is not none
+              and relation.type == 'table'
               and not should_full_refresh()
-              and config.get('materialized') == 'incremental_scd2') }}
+              and is_scd2) }}
   {%- endif -%}
 {%- endmacro -%}

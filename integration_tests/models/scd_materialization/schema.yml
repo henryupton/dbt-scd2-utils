@@ -1,0 +1,69 @@
+version: 2
+
+models:
+  - name: customers_scd0
+    description: >
+      Integration test for the generic scd materialization with scd_type=0
+      (insert only). Keeps a single, immutable row per customer_id, retaining the
+      original value while emitting the same audit columns as the other types.
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+    tests:
+      # Structural invariants.
+      - dbt_scd2_utils.one_current_per_key:
+          arguments:
+            key_columns: [customer_id]
+            current_column: _is_current
+      - dbt_scd2_utils.all_records_current:
+          arguments:
+            current_column: _is_current
+      - dbt_scd2_utils.valid_window_well_formed:
+          arguments:
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+      # Behavioural: Type 0 retains the original (earliest) value per key and
+      # never updates it on subsequent loads. _valid_from is included so the
+      # preservation of the first-seen timestamp across loads is asserted.
+      - matches_expected_seed:
+          arguments:
+            seed_prefix: customers_scd0_expected
+            compare_columns: [customer_id, customer_name, email, status, _valid_from]
+
+  - name: customers_scd1
+    description: >
+      Integration test for the generic scd materialization with scd_type=1. Keeps
+      a single, always-current row per customer_id while emitting the same audit
+      columns as the other types.
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+    tests:
+      # Structural invariants.
+      - dbt_scd2_utils.one_current_per_key:
+          arguments:
+            key_columns: [customer_id]
+            current_column: _is_current
+      - dbt_scd2_utils.all_records_current:
+          arguments:
+            current_column: _is_current
+      - dbt_scd2_utils.latest_row_is_current:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            current_column: _is_current
+      - dbt_scd2_utils.valid_window_well_formed:
+          arguments:
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+      # Behavioural: Type 1 overwrites each key with the latest value on every
+      # load, but preserves the first-seen _valid_from. Including _valid_from
+      # asserts it is NOT reset to the new updated_at on overwrite.
+      - matches_expected_seed:
+          arguments:
+            seed_prefix: customers_scd1_expected
+            compare_columns: [customer_id, customer_name, email, status, _valid_from]

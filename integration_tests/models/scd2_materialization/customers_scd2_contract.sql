@@ -20,6 +20,7 @@ select
     email,
     status,
     deleted_at::timestamp_tz as deleted_at,
-    _updated_at,
+    _updated_at::timestamp_tz as _updated_at,
+    _updated_at::timestamp_tz as _created_at,
     sysdate() as _written_at
 from {{ ref('customers_raw_' ~ iteration) }}

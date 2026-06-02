@@ -11,6 +11,15 @@ Tests for the core SCD2 materialization functionality:
 - **`customers_scd2.sql`** - Main SCD2 materialization test model
 - **`schema.yml`** - Tests and configuration for SCD2 models
 
+#### `models/scd_materialization/`
+Tests for the generic `scd` materialization (types 0 and 1):
+- **`customers_scd0.sql`** - SCD type 0 model (insert only, original value retained)
+- **`customers_scd1.sql`** - SCD type 1 model (one current row per key, overwritten)
+- **`customers_scd1_deleted_at_invalid.sql`** - Disabled negative fixture; `deleted_at_column` on a type 0/1 model must raise a compiler error (see `test_scd_negative.sh`)
+- **`schema.yml`** - Invariant tests plus `matches_expected_seed` behavioural checks
+
+Behavioural expectations live in `seeds/scd_materialization/` as `customers_scd{0,1}_expected_{iteration}.csv`; the `matches_expected_seed` test compares the model to the seed for the current `iteration`.
+
 #### `models/source_macro/`
 Tests for the enhanced `source()` macro functionality:
 - **`test_source_macro_basic.sql`** - Basic source macro usage (no loaded_at parameter)
@@ -63,6 +72,22 @@ dbt test --select test_type:unit
 dbt seed --select seeds/scd2_materialization/
 dbt run --select models/scd2_materialization/
 dbt test --select models/scd2_materialization/
+```
+
+#### SCD Types 0 & 1 (generic `scd` materialization)
+```bash
+# Initial-load behaviour (iteration 1): builds models + runs all tests, including
+# the matches_expected_seed checks against customers_scd{0,1}_expected_1.
+dbt build --select +models/scd_materialization/
+
+# Incremental behaviour (iterations 1 -> 2): drives successive loads via the
+# sequence script, running the tests after each load. Expected seeds exist for
+# iterations 1 and 2.
+./test_scd2_sequence.sh 1 2 customers_scd0
+./test_scd2_sequence.sh 1 2 customers_scd1
+
+# Negative test: deleted_at_column on a type 0/1 model must raise a compiler error.
+./test_scd_negative.sh
 ```
 
 #### Source Macro Tests

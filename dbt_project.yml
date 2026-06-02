@@ -25,6 +25,8 @@ dispatch:
 
 vars:
   dbt_scd2_utils:
+    # Default SCD type for the generic scd materialization (0, 1 or 2)
+    scd_type: 2
     # Default audit column names (can be overridden at model level)
     updated_at_column: _updated_at
     is_current_column: _is_current
