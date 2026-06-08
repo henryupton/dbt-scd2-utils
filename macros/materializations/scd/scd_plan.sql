@@ -155,6 +155,16 @@
     {{ exceptions.warn(warning_message) }}
   {%- endif -%}
 
+  {# Collapse (delete) redundant versions that an out-of-order arrival removes from the #}
+  {# timeline so incremental runs stay consistent with a full refresh. This needs the #}
+  {# full prior history, so it is only applied when update_all_previous_records is true; #}
+  {# otherwise it safely falls back to retaining (and re-expiring) the existing versions. #}
+  {%- set collapse_redundant_versions = dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'collapse_redundant_versions', default=true) -%}
+  {%- if collapse_redundant_versions and not update_all_previous_records -%}
+    {{ exceptions.warn("dbt_scd2_utils: collapse_redundant_versions requires update_all_previous_records=true to be safe; redundant versions will be retained for " ~ this ~ ".") }}
+  {%- endif -%}
+  {%- set collapse_redundant_versions = collapse_redundant_versions and update_all_previous_records -%}
+
   {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
   {# Recomputing the change column for every record ensures accuracy. #}
   {# No updating all previous records results in multiple 'I' records. #}
@@ -251,6 +261,7 @@
       'merge_update_cols': merge_update_cols,
       'incremental_predicates': config.get('incremental_predicates', []),
       'update_all_previous_records': update_all_previous_records,
+      'collapse_redundant_versions': collapse_redundant_versions,
     }) -%}
 
     {%- set build_sql = dbt_scd2_utils.get_incremental_scd2_sql(default_arg_dict) -%}
