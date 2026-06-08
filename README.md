@@ -24,7 +24,7 @@ Add to your `packages.yml`:
 ```yaml
 packages:
   - package: henryupton/dbt-scd2-utils
-    version: ["1.0.39"]
+    version: ["1.0.40"]
 ```
 
 Then run:
