@@ -121,6 +121,8 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 
 ## Configuration
 
+> **Package options live under `meta`.** dbt deprecates custom keys passed directly to `config()` (the `CustomKeyInConfigDeprecation` warning), so this package reads its options from the model's `meta` block. Pass package options inside `meta={...}` in your `config()` call — native keys like `materialized` and `unique_key` stay at the top level — and set global defaults via `vars` (see [Global Configuration](#global-configuration)).
+
 ### Core Options
 
 | Option | Required | Default | Description |
@@ -141,6 +143,8 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `valid_to_column` | `_VALID_TO` |
 | `updated_at_column` | `_UPDATED_AT` |
 | `change_type_column` | `_CHANGE_TYPE` |
+
+Override per model inside `meta` (e.g. `meta={'is_current_column': 'current_flag'}`), or set defaults globally via `vars` (below).
 
 ### Global Configuration
 
@@ -182,9 +186,11 @@ Control which columns trigger SCD2 changes using the `change_columns` object:
   config(
     materialized='incremental_scd2',
     unique_key=['customer_id'],
-    change_columns={
-      'include': ['customer_name', 'email', 'status'],
-      'exclude': ['last_login_at', '_metadata']
+    meta={
+      'change_columns': {
+        'include': ['customer_name', 'email', 'status'],
+        'exclude': ['last_login_at', '_metadata']
+      }
     }
   )
 }}
@@ -219,8 +225,10 @@ from {{ source('raw', 'customers') }}
   config(
     materialized='incremental_scd2',
     unique_key=['product_id'],
-    change_columns={
-      'include': ['name', 'price', 'description']
+    meta={
+      'change_columns': {
+        'include': ['name', 'price', 'description']
+      }
     }
   )
 }}
@@ -230,8 +238,10 @@ from {{ source('raw', 'customers') }}
   config(
     materialized='incremental_scd2',
     unique_key=['order_id'],
-    change_columns={
-      'exclude': ['_synced_at', '_batch_id']
+    meta={
+      'change_columns': {
+        'exclude': ['_synced_at', '_batch_id']
+      }
     }
   )
 }}
@@ -241,9 +251,11 @@ from {{ source('raw', 'customers') }}
   config(
     materialized='incremental_scd2',
     unique_key=['user_id'],
-    change_columns={
-      'include': ['name', 'email', 'role', 'department'],
-      'exclude': ['last_seen_at']  -- even if in include, this will be excluded
+    meta={
+      'change_columns': {
+        'include': ['name', 'email', 'role', 'department'],
+        'exclude': ['last_seen_at']  -- even if in include, this will be excluded
+      }
     }
   )
 }}
@@ -259,11 +271,13 @@ If you use the new `change_columns` object, it takes precedence over the legacy 
 
 ```sql
 -- New approach (recommended)
-change_columns={'include': ['name', 'email'], 'exclude': ['metadata']}
+meta={'change_columns': {'include': ['name', 'email'], 'exclude': ['metadata']}}
 
 -- Legacy approach (still supported)
-scd_check_columns=['name', 'email'],
-exclude_columns_from_change_check=['metadata']
+meta={
+  'scd_check_columns': ['name', 'email'],
+  'exclude_columns_from_change_check': ['metadata']
+}
 ```
 
 ## Deletion Support
@@ -275,7 +289,9 @@ Track logical deletions and resurrections:
   config(
     materialized='incremental_scd2',
     unique_key=['product_id'],
-    deleted_at_column='deleted_at'
+    meta={
+      'deleted_at_column': 'deleted_at'
+    }
   )
 }}
 
