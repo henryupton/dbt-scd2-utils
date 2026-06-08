@@ -155,6 +155,24 @@ vars:
     default_valid_to: "2999-12-31 23:59:59"
 ```
 
+### Out-of-Order & Backfill Handling
+
+These project-level vars control how the SCD Type 2 materialization reconciles existing
+history when records arrive out of chronological order (for example a backfill carrying an
+`updated_at` earlier than rows already in the table). Both default to the safe behaviour.
+
+```yaml
+vars:
+  dbt_scd2_utils:
+    update_all_previous_records: true   # default
+    collapse_redundant_versions: true   # default
+```
+
+| Var | Default | Behaviour |
+|-----|---------|-----------|
+| `update_all_previous_records` | `true` | Re-evaluate every existing version of an affected key on each run, so out-of-order arrivals are slotted in correctly. Set to `false` only if data is guaranteed to arrive in chronological order — it is a performance optimisation that otherwise risks multiple `is_current` rows for a key. |
+| `collapse_redundant_versions` | `true` | When an out-of-order arrival has tracked columns identical to an existing version, that existing version collapses out of the timeline. With the default the now-redundant row is **deleted**, so an incremental run matches a full refresh. Set to `false` to **keep** the redundant version instead (no deletes; the existing row is still correctly re-expired). Only takes effect when `update_all_previous_records` is also `true`. |
+
 ### Change Column Configuration
 
 Control which columns trigger SCD2 changes using the `change_columns` object:

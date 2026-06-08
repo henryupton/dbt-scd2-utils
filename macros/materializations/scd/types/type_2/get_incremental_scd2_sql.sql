@@ -52,6 +52,7 @@
     {%- set created_at_col = arg_dict.get('created_at_column') -%}
     {%- set deleted_at_col = arg_dict.get('deleted_at_column') -%}
     {%- set update_all_previous_records = arg_dict['update_all_previous_records'] -%}
+    {%- set collapse_redundant_versions = arg_dict.get('collapse_redundant_versions', true) -%}
 
     {# Prepare column lists for the MERGE statement #}
     {%- set unique_keys_csv = dbt_scd2_utils.get_quoted_csv(unique_key | map("upper")) -%}
@@ -148,21 +149,56 @@ using (
         -- select * from compare_versions order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
         ,
 
-        {# This allows us to ignore changes in a certain subset of columns. #}
+        {# Canonical versions: collapse runs of identical hashes to a single version. #}
+        {# When NOT collapsing redundant versions, keep records that already exist in the #}
+        {# target ('previous') so an out-of-order arrival can never strand an existing #}
+        {# version - its audit columns are recomputed below rather than left behind. #}
         changes_only as (
             select *
             from compare_versions
-            where (_prev_hash is null or _scd2_hash != _prev_hash) -- Only if the hash has changed (or is the first record for this key)
+            where _prev_hash is null
+               or _scd2_hash != _prev_hash -- the hash changed (or this is the first record for the key)
+               {%- if not collapse_redundant_versions %}
+               or _source = 'previous' -- never drop an already-persisted version
+               {%- endif %}
         )
+        ,
 
-    select
-        {{ dest_cols_csv }},
-        {# SCD2 audit columns using reusable macros #}
-        {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
-        {{ dbt_scd2_utils.get_valid_from_sql(unique_keys_csv, updated_at_col, created_at_col) }} as {{ valid_from_col }},
-        {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col, none, deleted_at_col) }} as {{ valid_to_col }},
-        {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col, deleted_at_col) }} as {{ change_type_col }}
-    from changes_only
+        {# Recompute the SCD2 audit columns over the canonical timeline. #}
+        scd2_versions as (
+            select
+                {{ dest_cols_csv }},
+                {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
+                {{ dbt_scd2_utils.get_valid_from_sql(unique_keys_csv, updated_at_col, created_at_col) }} as {{ valid_from_col }},
+                {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col, none, deleted_at_col) }} as {{ valid_to_col }},
+                {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col, deleted_at_col) }} as {{ change_type_col }},
+                'upsert' as _scd2_op
+            from changes_only
+        )
+        {%- if collapse_redundant_versions %}
+        ,
+
+        {# Existing versions that are no longer canonical (collapsed away by an #}
+        {# out-of-order arrival carrying an identical hash) are removed so the table #}
+        {# stays consistent with a full refresh. #}
+        redundant_versions as (
+            select
+                {{ dest_cols_csv }},
+                cast(null as boolean) as {{ is_current_col }},
+                cast(null as timestamp_tz) as {{ valid_from_col }},
+                cast(null as timestamp_tz) as {{ valid_to_col }},
+                cast(null as varchar) as {{ change_type_col }},
+                'delete' as _scd2_op
+            from previous_record
+            where _scd2_key not in (select _scd2_key from changes_only)
+        )
+        {%- endif %}
+
+    select * from scd2_versions
+    {%- if collapse_redundant_versions %}
+    union all
+    select * from redundant_versions
+    {%- endif %}
     ) AS DBT_INTERNAL_SOURCE
 on (
     {# Matching condition for the MERGE: unique key and the updated_at timestamp #}
@@ -179,12 +215,16 @@ on (
         )
     {%- endif -%}
 )
+{%- if collapse_redundant_versions %}
+{# A matched record flagged for deletion is a version that collapsed out of the timeline. #}
+when matched and DBT_INTERNAL_SOURCE._scd2_op = 'delete' then delete
+{%- endif %}
 {# When a match is found, we update the existing record (this typically happens to set _is_current to false or _valid_to for old records) #}
-when matched then update set
+when matched {% if collapse_redundant_versions %}and DBT_INTERNAL_SOURCE._scd2_op = 'upsert' {% endif %}then update set
     {% for col in merge_update_cols %}
         DBT_INTERNAL_DEST.{{ col }} = DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %},{% endif %}
     {%- endfor %}
 {# When no match is found, it's a new record or a new version of an existing record, so we insert it #}
-when not matched then insert ({{ all_cols_csv }})
+when not matched {% if collapse_redundant_versions %}and DBT_INTERNAL_SOURCE._scd2_op = 'upsert' {% endif %}then insert ({{ all_cols_csv }})
 values ({{ all_cols_csv }})
 {% endmacro %}

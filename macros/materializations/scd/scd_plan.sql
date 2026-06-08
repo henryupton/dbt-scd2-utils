@@ -87,6 +87,20 @@
   {# Audit column names common to all SCD types #}
   {%- set audit_columns = [is_current_col, valid_from_col, valid_to_col, change_type_col] -%}
 
+  {# Fail fast: a configured created_at / deleted_at column must actually be produced by #}
+  {# the model, otherwise the generated SQL fails later with a cryptic 'invalid identifier'. #}
+  {%- set dest_column_names_upper = dest_columns | map(attribute='name') | map('upper') | list -%}
+  {%- for setting_name, setting_value in [('created_at_column', created_at_col), ('deleted_at_column', deleted_at_col)] -%}
+    {%- if setting_value is not none and (setting_value | upper) not in dest_column_names_upper -%}
+      {%- set error_message -%}
+        {{ setting_name }} ('{{ setting_value }}') is configured but is not a column produced by
+        this model ({{ target_relation }}). Add the column to the model or unset {{ setting_name }}.
+        Available columns: {{ dest_column_names_upper | join(', ') }}
+      {%- endset -%}
+      {{ exceptions.raise_compiler_error(error_message) }}
+    {%- endif -%}
+  {%- endfor -%}
+
   {%- set should_full_refresh = (should_full_refresh() or existing_relation is none) -%}
 
   {# ------------------------------------------------------------------ #}
@@ -154,6 +168,16 @@
     {%- endset -%}
     {{ exceptions.warn(warning_message) }}
   {%- endif -%}
+
+  {# Collapse (delete) redundant versions that an out-of-order arrival removes from the #}
+  {# timeline so incremental runs stay consistent with a full refresh. This needs the #}
+  {# full prior history, so it is only applied when update_all_previous_records is true; #}
+  {# otherwise it safely falls back to retaining (and re-expiring) the existing versions. #}
+  {%- set collapse_redundant_versions = dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'collapse_redundant_versions', default=true) -%}
+  {%- if collapse_redundant_versions and not update_all_previous_records -%}
+    {{ exceptions.warn("dbt_scd2_utils: collapse_redundant_versions requires update_all_previous_records=true to be safe; redundant versions will be retained for " ~ this ~ ".") }}
+  {%- endif -%}
+  {%- set collapse_redundant_versions = collapse_redundant_versions and update_all_previous_records -%}
 
   {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
   {# Recomputing the change column for every record ensures accuracy. #}
@@ -251,6 +275,7 @@
       'merge_update_cols': merge_update_cols,
       'incremental_predicates': config.get('incremental_predicates', []),
       'update_all_previous_records': update_all_previous_records,
+      'collapse_redundant_versions': collapse_redundant_versions,
     }) -%}
 
     {%- set build_sql = dbt_scd2_utils.get_incremental_scd2_sql(default_arg_dict) -%}
