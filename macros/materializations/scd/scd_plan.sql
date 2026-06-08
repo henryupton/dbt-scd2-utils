@@ -87,6 +87,20 @@
   {# Audit column names common to all SCD types #}
   {%- set audit_columns = [is_current_col, valid_from_col, valid_to_col, change_type_col] -%}
 
+  {# Fail fast: a configured created_at / deleted_at column must actually be produced by #}
+  {# the model, otherwise the generated SQL fails later with a cryptic 'invalid identifier'. #}
+  {%- set dest_column_names_upper = dest_columns | map(attribute='name') | map('upper') | list -%}
+  {%- for setting_name, setting_value in [('created_at_column', created_at_col), ('deleted_at_column', deleted_at_col)] -%}
+    {%- if setting_value is not none and (setting_value | upper) not in dest_column_names_upper -%}
+      {%- set error_message -%}
+        {{ setting_name }} ('{{ setting_value }}') is configured but is not a column produced by
+        this model ({{ target_relation }}). Add the column to the model or unset {{ setting_name }}.
+        Available columns: {{ dest_column_names_upper | join(', ') }}
+      {%- endset -%}
+      {{ exceptions.raise_compiler_error(error_message) }}
+    {%- endif -%}
+  {%- endfor -%}
+
   {%- set should_full_refresh = (should_full_refresh() or existing_relation is none) -%}
 
   {# ------------------------------------------------------------------ #}
