@@ -34,7 +34,7 @@ models:
             valid_from_column: _valid_from
             valid_to_column: _valid_to
 
-      - dbt_scd2_utils.first_record_insert:
+      - dbt_scd2_utils.first_record_not_update:
           arguments:
             key_columns: [customer_id]
             valid_from_column: _valid_from
@@ -93,6 +93,12 @@ models:
             deleted_at_column: deleted_at
             valid_from_column: _valid_from
             valid_to_column: _valid_to
+
+      - dbt_scd2_utils.first_record_not_update:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            change_type_column: _change_type
 
   - name: customers_scd2_contract
     description: >
