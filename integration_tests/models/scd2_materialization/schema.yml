@@ -100,6 +100,18 @@ models:
             valid_from_column: _valid_from
             change_type_column: _change_type
 
+      - dbt_scd2_utils.insert_follows_delete:
+          arguments:
+            key_columns: [customer_id]
+            change_type_column: _change_type
+            valid_from_column: _valid_from
+
+      - dbt_scd2_utils.continuous_validity_windows:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
   - name: customers_scd2_contract
     description: >
       Regression test for contract enforcement on the incremental_scd2
