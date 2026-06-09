@@ -387,7 +387,7 @@ models:
 - `no_validity_overlaps`: No overlapping validity windows
 - `continuous_validity_windows`: No gaps in validity periods
 - `latest_row_is_current`: Latest record marked as current
-- `first_record_insert`: First records have change_type = 'I'
+- `first_record_not_update`: A key's first record is an insert or delete, never an update
 - `insert_follows_delete`: Resurrections marked as 'I'
 - `no_consecutive_inserts_or_deletes`: Valid change type sequences
 - `no_records_after_deletion`: Deletion records have correct valid_from

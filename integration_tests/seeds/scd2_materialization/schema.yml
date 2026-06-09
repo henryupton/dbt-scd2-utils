@@ -75,3 +75,37 @@ seeds:
         data_type: timestamp_tz
       - name: _updated_at
         data_type: timestamp_tz
+
+  - name: born_deleted_raw_1
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: customer_name
+        data_type: varchar
+      - name: email
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: deleted_at
+        data_type: timestamp_tz
+      - name: _created_at
+        data_type: timestamp_tz
+      - name: _updated_at
+        data_type: timestamp_tz
+
+  - name: born_deleted_raw_2
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: customer_name
+        data_type: varchar
+      - name: email
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: deleted_at
+        data_type: timestamp_tz
+      - name: _created_at
+        data_type: timestamp_tz
+      - name: _updated_at
+        data_type: timestamp_tz

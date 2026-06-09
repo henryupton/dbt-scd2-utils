@@ -34,7 +34,7 @@ models:
             valid_from_column: _valid_from
             valid_to_column: _valid_to
 
-      - dbt_scd2_utils.first_record_insert:
+      - dbt_scd2_utils.first_record_not_update:
           arguments:
             key_columns: [customer_id]
             valid_from_column: _valid_from
@@ -60,6 +60,55 @@ models:
 
       - dbt_scd2_utils.valid_window_well_formed:
           arguments:
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+  - name: born_deleted_scd2
+    description: >
+      Regression reproduction for the born-deleted edge case: a key whose first
+      and only version arrives already soft-deleted. The record must be 'D',
+      valid from deleted_at, and current. no_records_after_deletion is the
+      primary guard (it asserts valid_from = deleted_at for deleted records).
+    tests:
+      - dbt_scd2_utils.one_current_per_key:
+          arguments:
+            key_columns: [customer_id]
+            current_column: _is_current
+
+      - dbt_scd2_utils.no_validity_overlaps:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+      - dbt_scd2_utils.latest_row_is_current:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            current_column: _is_current
+
+      - dbt_scd2_utils.no_records_after_deletion:
+          arguments:
+            key_columns: [customer_id]
+            deleted_at_column: deleted_at
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+      - dbt_scd2_utils.first_record_not_update:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            change_type_column: _change_type
+
+      - dbt_scd2_utils.insert_follows_delete:
+          arguments:
+            key_columns: [customer_id]
+            change_type_column: _change_type
+            valid_from_column: _valid_from
+
+      - dbt_scd2_utils.continuous_validity_windows:
+          arguments:
+            key_columns: [customer_id]
             valid_from_column: _valid_from
             valid_to_column: _valid_to
 
