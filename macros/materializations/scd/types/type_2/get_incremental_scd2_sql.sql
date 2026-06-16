@@ -54,6 +54,15 @@
     {%- set update_all_previous_records = arg_dict['update_all_previous_records'] -%}
     {%- set collapse_redundant_versions = arg_dict.get('collapse_redundant_versions', true) -%}
 
+    {# When collapsing redundant versions, the canonical row kept per content run is the           #}
+    {# EARLIEST-LOADED one (by loaded_at), not the earliest updated_at. So a later load carrying     #}
+    {# identical content never displaces, back-dates, or deletes the already-persisted version, even #}
+    {# if its updated_at is earlier (non-monotonic source). For a monotonic source this is identical #}
+    {# to earliest-updated_at, so it is a no-op there. Falls back to updated_at order when the model #}
+    {# emits no loaded_at watermark (loaded_at_column defaults to the audit load timestamp). #}
+    {%- set loaded_at_col = arg_dict.get('loaded_at_column', '_loaded_at') -%}
+    {%- set has_loaded_at = (loaded_at_col | upper) in (dest_columns | map(attribute='name') | map('upper') | list) -%}
+
     {# Prepare column lists for the MERGE statement #}
     {%- set unique_keys_csv = dbt_scd2_utils.get_quoted_csv(unique_key | map("upper")) -%}
     {%- set all_dest_columns = dest_columns | map(attribute='name') | map('upper') | list -%}
@@ -143,24 +152,40 @@ using (
         compare_versions as (
             select
                 *,
-                lag(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _prev_hash
+                lag(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _prev_hash,
+                conditional_change_event(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _run_id
             from pick_a_key_any_key
         )
         -- select * from compare_versions order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
         ,
 
-        {# Canonical versions: collapse runs of identical hashes to a single version. #}
-        {# When NOT collapsing redundant versions, keep records that already exist in the #}
-        {# target ('previous') so an out-of-order arrival can never strand an existing #}
-        {# version - its audit columns are recomputed below rather than left behind. #}
+        {# Canonical timeline: one row per content run (a run = consecutive rows sharing _scd2_hash, #}
+        {# ordered by updated_at, so recurrence A -> B -> A stays three runs). When collapsing #}
+        {# redundant versions, the survivor is the EARLIEST-LOADED row of the run — a later load #}
+        {# carrying identical content is dropped even if its updated_at is earlier, so it never #}
+        {# displaces, back-dates, or deletes the already-persisted version. For a monotonic source #}
+        {# earliest-loaded == earliest-updated_at (no-op). Falls back to updated_at order when the #}
+        {# model has no loaded_at watermark. When NOT collapsing, keep the run opener plus every #}
+        {# already-persisted ('previous') row so an out-of-order arrival can never strand a version. #}
         changes_only as (
+            {%- if collapse_redundant_versions %}
+            select *
+            from compare_versions
+            qualify row_number() over(
+                partition by {{ unique_keys_csv }}, _run_id
+                order by
+                {%- if has_loaded_at %}
+                    {{ loaded_at_col }} asc,    -- earliest physical load wins, regardless of updated_at
+                {%- endif %}
+                    {{ updated_at_col }} asc
+            ) = 1
+            {%- else %}
             select *
             from compare_versions
             where _prev_hash is null
                or _scd2_hash != _prev_hash -- the hash changed (or this is the first record for the key)
-               {%- if not collapse_redundant_versions %}
                or _source = 'previous' -- never drop an already-persisted version
-               {%- endif %}
+            {%- endif %}
         )
         ,
 
