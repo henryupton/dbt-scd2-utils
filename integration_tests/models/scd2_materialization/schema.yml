@@ -112,6 +112,50 @@ models:
             valid_from_column: _valid_from
             valid_to_column: _valid_to
 
+  - name: null_key_scd2
+    description: >
+      Regression reproduction for null-bearing unique keys. `region` is part
+      of the unique_key but is NULL for one customer, whose key is re-reported
+      across iterations. Both the incremental MERGE and the previous_record
+      lookup must match on the null-safe surrogate hash of the key, not
+      per-column raw equality — otherwise NULL = NULL (UNKNOWN) leaves the
+      prior current row un-expired and re-inserts a fresh current version each
+      run. Run via ./test_scd2_sequence.sh 1 2 null_key_scd2.
+    tests:
+      - dbt_scd2_utils.one_current_per_key:
+          arguments:
+            key_columns: [customer_id, region]
+            current_column: _is_current
+
+      - dbt_scd2_utils.no_validity_overlaps:
+          arguments:
+            key_columns: [customer_id, region]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+      - dbt_scd2_utils.continuous_validity_windows:
+          arguments:
+            key_columns: [customer_id, region]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+      - dbt_scd2_utils.latest_row_is_current:
+          arguments:
+            key_columns: [customer_id, region]
+            valid_from_column: _valid_from
+            current_column: _is_current
+
+      - dbt_scd2_utils.first_record_not_update:
+          arguments:
+            key_columns: [customer_id, region]
+            valid_from_column: _valid_from
+            change_type_column: _change_type
+
+      - dbt_scd2_utils.valid_window_well_formed:
+          arguments:
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
   - name: customers_scd2_contract
     description: >
       Regression test for contract enforcement on the incremental_scd2
