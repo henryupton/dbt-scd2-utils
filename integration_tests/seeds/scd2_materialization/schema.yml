@@ -109,3 +109,25 @@ seeds:
         data_type: timestamp_tz
       - name: _updated_at
         data_type: timestamp_tz
+
+  - name: null_key_raw_1
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: region
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: _updated_at
+        data_type: timestamp_tz
+
+  - name: null_key_raw_2
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: region
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: _updated_at
+        data_type: timestamp_tz

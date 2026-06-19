@@ -82,6 +82,8 @@ using (
                 'new' as _source,
                 17 as _priority,
                 {{ dbt_utils.generate_surrogate_key(scd2_unique_key) }} as _scd2_key,
+                {# Business-key-only hash (no updated_at) for the previous_record match below. #}
+                {{ dbt_utils.generate_surrogate_key(unique_key) }} as _scd2_business_key,
                 {{ dbt_utils.generate_surrogate_key(scd_check_columns | list) }} as _scd2_hash,
             from {{ temp_relation }}
         )
@@ -99,9 +101,15 @@ using (
             where exists (
                 select 1
                 from new_records as n
-                where {% for col in unique_key -%}
-                    p.{{ col }} = n.{{ col }} {% if not loop.last %} and {% endif %}
-                {%- endfor %}
+                {#
+                  Match prior versions on a null-safe hash of unique_key, not column by column:
+                  `p.col = n.col` is UNKNOWN when a key column is NULL, so a null-bearing key's
+                  prior versions were never pulled in and its current row was never expired.
+                  generate_surrogate_key coalesces NULLs (no-op for non-null keys). n reuses its
+                  _scd2_business_key column; p is the raw target table, so it hashes inline.
+                #}
+                where {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(unique_key, 'p.')) }}
+                    = n._scd2_business_key
                 {# We want all previous records which could have been valid when any of the new records occurred. #}
                 {% if not update_all_previous_records %}
                 and n.{{ updated_at_col }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
@@ -197,7 +205,8 @@ using (
                 {{ dbt_scd2_utils.get_valid_from_sql(unique_keys_csv, updated_at_col, created_at_col, deleted_at_col) }} as {{ valid_from_col }},
                 {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col, none, deleted_at_col) }} as {{ valid_to_col }},
                 {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col, deleted_at_col) }} as {{ change_type_col }},
-                'upsert' as _scd2_op
+                'upsert' as _scd2_op,
+                _scd2_key
             from changes_only
         )
         {%- if collapse_redundant_versions %}
@@ -213,7 +222,8 @@ using (
                 cast(null as timestamp_tz) as {{ valid_from_col }},
                 cast(null as timestamp_tz) as {{ valid_to_col }},
                 cast(null as varchar) as {{ change_type_col }},
-                'delete' as _scd2_op
+                'delete' as _scd2_op,
+                _scd2_key
             from previous_record
             where _scd2_key not in (select _scd2_key from changes_only)
         )
@@ -226,10 +236,14 @@ using (
     {%- endif %}
     ) AS DBT_INTERNAL_SOURCE
 on (
-    {# Matching condition for the MERGE: unique key and the updated_at timestamp #}
-    {% for col in scd2_unique_key -%}
-        DBT_INTERNAL_DEST.{{ col }} = DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %} and {% endif %}
-    {%- endfor %}
+    {#
+      Same null-safe key match as previous_record above, on the full SCD2 key (incl. updated_at):
+      without it a null-bearing key fell through to `not matched` and re-inserted a current row
+      every run, piling up duplicates. SOURCE reuses the propagated _scd2_key; DEST is the raw
+      target table, which doesn't persist it, so it hashes inline.
+    #}
+    {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd2_unique_key, 'DBT_INTERNAL_DEST.')) }}
+        = DBT_INTERNAL_SOURCE._scd2_key
     {%- if incremental_predicates -%}
     {# Optional: Incremental Predicates (if defined in dbt_project.yml or model config) #}
     and (
