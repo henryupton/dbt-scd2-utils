@@ -133,6 +133,10 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `scd_check_columns` | ❌ | all columns | **(Legacy)** Columns to track for changes |
 | `exclude_columns_from_change_check` | ❌ | `[]` | **(Legacy)** Columns to exclude from change tracking |
 | `deleted_at_column` | ❌ | none | Column for logical deletion tracking |
+| `track_previous_version` | ❌ | `false` | (SCD2 only) add an OBJECT column with the prior version's tracked columns |
+| `previous_version_column` | ❌ | `_PREVIOUS` | Name of the previous-version object column |
+| `track_changed_columns` | ❌ | `false` | (SCD2 only) add an OBJECT column of per-tracked-column change booleans |
+| `changed_columns_column` | ❌ | `_CHANGED` | Name of the change-map object column |
 
 ### Audit Column Names
 
@@ -279,6 +283,68 @@ meta={
   'exclude_columns_from_change_check': ['metadata']
 }
 ```
+
+## Previous Version and Change Tracking
+
+Two optional OBJECT columns record, for each version, what the entity looked like before
+and which tracked columns moved. Both are off by default, are enabled per model, and apply
+to SCD type 2 only (setting either on a type 0 or type 1 model logs a warning and the
+columns are simply not produced). You can turn them on for a staging layer without
+affecting dimension tables.
+
+```sql
+{{
+  config(
+    materialized='incremental_scd2',
+    unique_key=['customer_id'],
+    meta={
+      'track_previous_version': true,
+      'track_changed_columns': true
+    }
+  )
+}}
+
+select
+    customer_id,
+    email,
+    status,
+    updated_at as _updated_at
+from {{ source('raw', 'customers') }}
+```
+
+- **`_previous`** holds the tracked columns of the immediately preceding version. The first
+  version of a key has no predecessor, so its `_previous` is `NULL`.
+- **`_changed`** holds one boolean per tracked column, `true` when that column changed since
+  the prior version. It is `NULL` for a key's first version.
+
+Both objects cover only the tracked change columns (the same set that triggers a new
+version), and both use lowercased keys.
+
+| customer_id | email | status | _previous | _changed |
+|-------------|-------|--------|-----------|----------|
+| 123 | john@old.com | active | null | null |
+| 123 | john@new.com | active | `{"email":"john@old.com","status":"active"}` | `{"email":true,"status":false}` |
+
+Enable a whole layer via `dbt_project.yml`:
+
+```yaml
+models:
+  my_project:
+    staging:
+      +meta:
+        track_previous_version: true
+        track_changed_columns: true
+    marts:
+      # dimension tables leave the switches off
+```
+
+**Limitation (case sensitivity):** object keys are stored lowercase, and Snowflake object
+path access is case-sensitive, so read them in lowercase (`_previous:email`,
+`_changed:email`) even though the underlying columns are uppercase.
+
+**Backfill note:** correct recomputation of these objects for existing versions after an
+out-of-order (backfill) arrival requires `update_all_previous_records=true` (the default).
+This is the same caveat that applies to `_change_type`.
 
 ## Deletion Support
 
