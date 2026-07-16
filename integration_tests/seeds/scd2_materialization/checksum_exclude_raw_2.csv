@@ -1,0 +1,2 @@
+customer_id,customer_name,email,status,batch_id,_updated_at
+1,Ann,ann@new.com,INACTIVE,batch_c,2024-01-03 10:00:00+0000
