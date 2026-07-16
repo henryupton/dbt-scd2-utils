@@ -57,6 +57,9 @@
     {%- set previous_version_col = arg_dict.get('previous_version_column') -%}
     {%- set track_changed_columns = arg_dict.get('track_changed_columns', false) -%}
     {%- set changed_columns_col = arg_dict.get('changed_columns_column') -%}
+    {%- set track_checksum = arg_dict.get('track_checksum', false) -%}
+    {%- set checksum_col = arg_dict.get('checksum_column') -%}
+    {%- set checksum_columns = arg_dict.get('checksum_columns', []) -%}
 
     {# When collapsing redundant versions, the canonical row kept per content run is the           #}
     {# EARLIEST-LOADED one (by loaded_at), not the earliest updated_at. So a later load carrying     #}
@@ -209,6 +212,9 @@ using (
                 {{ dbt_scd2_utils.get_valid_from_sql(unique_keys_csv, updated_at_col, created_at_col, deleted_at_col) }} as {{ valid_from_col }},
                 {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col, none, deleted_at_col) }} as {{ valid_to_col }},
                 {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col, deleted_at_col) }} as {{ change_type_col }},
+                {%- if track_checksum %}
+                {{ dbt_scd2_utils.get_checksum_sql(checksum_columns) }} as {{ checksum_col }},
+                {%- endif %}
                 {%- if track_previous_version %}
                 {{ dbt_scd2_utils.get_previous_version_sql(scd_check_columns, unique_keys_csv, updated_at_col) }} as {{ previous_version_col }},
                 {%- endif %}
@@ -232,6 +238,9 @@ using (
                 cast(null as timestamp_tz) as {{ valid_from_col }},
                 cast(null as timestamp_tz) as {{ valid_to_col }},
                 cast(null as varchar) as {{ change_type_col }},
+                {%- if track_checksum %}
+                cast(null as varchar) as {{ checksum_col }},
+                {%- endif %}
                 {%- if track_previous_version %}
                 cast(null as object) as {{ previous_version_col }},
                 {%- endif %}

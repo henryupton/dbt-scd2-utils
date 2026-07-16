@@ -33,6 +33,9 @@
     {%- set updated_at_col = arg_dict['updated_at_column'] -%}
     {%- set created_at_col = arg_dict.get('created_at_column') -%}
     {%- set change_type_col = arg_dict['change_type_column'] -%}
+    {%- set track_checksum = arg_dict.get('track_checksum', false) -%}
+    {%- set checksum_col = arg_dict.get('checksum_column') -%}
+    {%- set checksum_columns = arg_dict.get('checksum_columns', []) -%}
 
     {%- set unique_keys_csv = dbt_scd2_utils.get_quoted_csv(unique_key) -%}
     {%- set select_cols = dest_columns | map(attribute="name") | list -%}
@@ -60,6 +63,9 @@ select
     {%- endif %} as {{ valid_from_col }},
     {{ dbt_scd2_utils.parse_timestamp_literal(var('default_valid_to', '2999-12-31 23:59:59')) }} as {{ valid_to_col }},
     'I' as {{ change_type_col }}
+    {%- if track_checksum %},
+    {{ dbt_scd2_utils.get_checksum_sql(checksum_columns) }} as {{ checksum_col }}
+    {%- endif %}
 from dedup
 
 {% endmacro %}

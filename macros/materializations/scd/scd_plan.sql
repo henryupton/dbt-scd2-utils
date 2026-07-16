@@ -49,6 +49,8 @@
   {%- set previous_version_col = dbt_scd2_utils.get_config_value(config, 'previous_version_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'previous_version_column', default='_PREVIOUS')) -%}
   {%- set track_changed_columns = dbt_scd2_utils.get_config_value(config, 'track_changed_columns', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'track_changed_columns', default=false)) -%}
   {%- set changed_columns_col = dbt_scd2_utils.get_config_value(config, 'changed_columns_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'changed_columns_column', default='_CHANGED')) -%}
+  {%- set track_checksum = dbt_scd2_utils.get_config_value(config, 'track_checksum', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'track_checksum', default=false)) -%}
+  {%- set checksum_col = dbt_scd2_utils.get_config_value(config, 'checksum_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'checksum_column', default='_CHECKSUM')) -%}
 
   {%- set unique_key = config.get('unique_key') -%}
 
@@ -118,6 +120,17 @@
     {%- endif -%}
   {%- endfor -%}
 
+  {# Content checksum column set: business columns (including the natural key) minus the #}
+  {# audit and lifecycle columns, sorted so the fingerprint is independent of select-list #}
+  {# order. Shared by all SCD types; computed from the base audit columns before the #}
+  {# type-2-only _previous / _changed are appended. #}
+  {%- set checksum_lifecycle_cols = [] -%}
+  {%- for c in [updated_at_col, created_at_col, deleted_at_col] -%}
+    {%- if c is not none -%}{%- do checksum_lifecycle_cols.append(c) -%}{%- endif -%}
+  {%- endfor -%}
+  {%- set checksum_columns = dbt_scd2_utils.list_difference(dest_column_names_upper, dbt_scd2_utils.list_union(audit_columns, checksum_lifecycle_cols), case_insensitive=true) | sort -%}
+  {%- if track_checksum -%}{%- do audit_columns.append(checksum_col) -%}{%- endif -%}
+
   {%- set should_full_refresh = (should_full_refresh() or existing_relation is none) -%}
 
   {# ------------------------------------------------------------------ #}
@@ -137,7 +150,10 @@
         'valid_to_column': valid_to_col,
         'updated_at_column': updated_at_col,
         'change_type_column': change_type_col,
-        'created_at_column': created_at_col
+        'created_at_column': created_at_col,
+        'track_checksum': track_checksum,
+        'checksum_column': checksum_col,
+        'checksum_columns': checksum_columns
     } -%}
 
     {%- if not should_full_refresh -%}
@@ -279,7 +295,10 @@
       'track_previous_version': track_previous_version,
       'previous_version_column': previous_version_col,
       'track_changed_columns': track_changed_columns,
-      'changed_columns_column': changed_columns_col
+      'changed_columns_column': changed_columns_col,
+      'track_checksum': track_checksum,
+      'checksum_column': checksum_col,
+      'checksum_columns': checksum_columns
   }  %}
 
   {%- if should_full_refresh -%}
