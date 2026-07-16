@@ -137,6 +137,8 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `previous_version_column` | ❌ | `_PREVIOUS` | Name of the previous-version object column |
 | `track_changed_columns` | ❌ | `false` | (SCD2 only) add an OBJECT column of per-tracked-column change booleans |
 | `changed_columns_column` | ❌ | `_CHANGED` | Name of the change-map object column |
+| `track_checksum` | ❌ | `false` | Add a `_CHECKSUM` md5 content fingerprint of the business columns (all SCD types) |
+| `checksum_column` | ❌ | `_CHECKSUM` | Name of the checksum column |
 
 ### Audit Column Names
 
@@ -350,6 +352,35 @@ This is the same caveat that applies to `_change_type`.
 `--full-refresh` when you enable it on an already-built model. Without it the next
 incremental run errors with an invalid-identifier on the new column (the same requirement
 as adding `deleted_at_column` to an existing model).
+
+## Content Checksum
+
+An optional `_checksum` column emits an md5 content fingerprint of the row's business
+columns, using the same `generate_surrogate_key` hash the wider platform uses for staging
+`_checksum`. It is off by default, enabled per model, and available on all SCD types.
+
+```sql
+{{
+  config(
+    materialized='scd',
+    unique_key=['customer_id'],
+    meta={'scd_type': 2, 'track_checksum': true}
+  )
+}}
+```
+
+- The fingerprint covers all business columns **including the natural key**, and excludes
+  the SCD audit columns and the lifecycle columns (`updated_at`, `created_at`,
+  `deleted_at`). Columns are hashed in alphabetical order, so `_checksum` is stable
+  regardless of select-list order.
+- Two rows with the same `_checksum` have identical business content. On type 0 it is set
+  once for the retained row; on type 1 it is recomputed when the row is overwritten; on
+  type 2 each version carries its own.
+
+**Limitation:** the column set is derived automatically and is cast to `varchar` for the
+hash, so non-scalar columns (`ARRAY` / `OBJECT` / `VARIANT` / `GEOGRAPHY`) in scope may
+error or hash non-deterministically. Keep such columns out of the model, or out of scope
+for the checksum, if you enable this.
 
 ## Deletion Support
 
