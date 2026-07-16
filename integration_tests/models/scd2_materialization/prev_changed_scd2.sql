@@ -5,6 +5,7 @@
         meta={
             'track_previous_version': true,
             'track_changed_columns': true,
+            'track_checksum': true,
             'change_columns': {
                 'exclude': ['_written_at', '_created_at']
             }

@@ -376,6 +376,9 @@ columns, using the same `generate_surrogate_key` hash the wider platform uses fo
 - Two rows with the same `_checksum` have identical business content. On type 0 it is set
   once for the retained row; on type 1 it is recomputed when the row is overwritten; on
   type 2 each version carries its own.
+- Enabling it adds a column, so run a one-off `--full-refresh` when you turn it on for an
+  already-built model, otherwise the next incremental run errors on the new column (the same
+  requirement as `track_previous_version` / `track_changed_columns` and `deleted_at_column`).
 
 **Limitation:** the column set is derived automatically and is cast to `varchar` for the
 hash, so non-scalar columns (`ARRAY` / `OBJECT` / `VARIANT` / `GEOGRAPHY`) in scope may
