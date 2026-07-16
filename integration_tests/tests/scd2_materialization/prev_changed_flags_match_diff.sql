@@ -5,9 +5,9 @@ with base as (
         _updated_at,
         _changed,
         row_number() over (partition by customer_id order by _updated_at) as rn,
-        (customer_name is distinct from lag(customer_name) over (partition by customer_id order by _updated_at)) as customer_name_changed,
-        (email         is distinct from lag(email)         over (partition by customer_id order by _updated_at)) as email_changed,
-        (status        is distinct from lag(status)        over (partition by customer_id order by _updated_at)) as status_changed
+        (cast(customer_name as varchar) is distinct from lag(cast(customer_name as varchar)) over (partition by customer_id order by _updated_at)) as customer_name_changed,
+        (cast(email as varchar)         is distinct from lag(cast(email as varchar))         over (partition by customer_id order by _updated_at)) as email_changed,
+        (cast(status as varchar)        is distinct from lag(cast(status as varchar))        over (partition by customer_id order by _updated_at)) as status_changed
     from {{ ref('prev_changed_scd2') }}
 )
 

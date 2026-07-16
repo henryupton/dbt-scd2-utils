@@ -16,7 +16,7 @@
 - **SCD type 2 only.** If either switch is true on an `scd_type` 0 or 1 model, emit a warning at plan time (`exceptions.warn`) and do not produce the columns; the model still builds. The columns are appended only in the type-2 section, so types 0/1 naturally omit them.
 - Object keys are lowercased. Known limitation: Snowflake object path access is case-sensitive, so consumers read `_previous:email` / `_changed:email` in lowercase.
 - The two switches are enabled per table (per-model `meta`, or folder-level `+meta`), never via a global `vars` switch default.
-- `_previous`/`_changed` are NULL for a key's first version. `_changed` uses `IS DISTINCT FROM` (null-to-value counts as changed; null-to-null does not). Built with `object_construct_keep_null`.
+- `_previous`/`_changed` are NULL for a key's first version. `_changed` uses `IS DISTINCT FROM` over the `varchar` cast of each value (matching the version-detection hash so a created version always has a true flag; null-to-value counts as changed, null-to-null does not). Built with `object_construct_keep_null`.
 - Correctness across backfill/out-of-order/collapse is only guaranteed when `update_all_previous_records=true` (same documented caveat as `_change_type`).
 - File layout (refactored SCD framework on main): planning in `macros/materializations/scd/scd_plan.sql`; type-2 SQL builders in `macros/materializations/scd/types/type_2/`; column-expression macros in `macros/materializations/scd/columns/`.
 - Integration tests require a live Snowflake connection: profile `default`, target `dev` (externalbrowser SSO, may prompt for browser login). Run from `integration_tests/`. Test models use `materialized='incremental_scd2'`. The global `vars` set `created_at_column: _created_at`, so every SCD2 test model must produce a `_created_at` column (a `scd_plan` guard errors otherwise).
@@ -359,7 +359,7 @@ case
     then cast(null as object)
   else object_construct_keep_null(
     {%- for col in scd_check_columns %}
-    '{{ col | lower }}', ({{ col }} is distinct from lag({{ col }}) over (partition by {{ unique_keys_csv }} order by {{ updated_at_col }})){{ "," if not loop.last }}
+    '{{ col | lower }}', (cast({{ col }} as varchar) is distinct from lag(cast({{ col }} as varchar)) over (partition by {{ unique_keys_csv }} order by {{ updated_at_col }})){{ "," if not loop.last }}
     {%- endfor %}
   )
 end

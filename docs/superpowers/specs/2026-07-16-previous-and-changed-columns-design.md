@@ -111,10 +111,15 @@ _previous = { "email": "john@old.com", "status": "active" }
 ### `_changed`
 
 For each version, an `OBJECT` with one key per tracked column, value `true` when that
-column's value differs from the prior version and `false` otherwise. Comparison uses
-`IS DISTINCT FROM`, so a null-to-value or value-to-null transition counts as changed and
-null-to-null does not. The whole object is `NULL` for a key's first version, matching
-`_previous`.
+column's value differs from the prior version and `false` otherwise. Comparison is
+`IS DISTINCT FROM` over the `varchar` cast of each value, deliberately matching the
+representation `generate_surrogate_key` uses for change detection. That keeps `_changed`
+consistent with version creation: a version exists only because the hash of the varchar
+casts differed, so at least one tracked column always reads as changed. (Comparing the raw
+typed values instead can disagree with versioning, for example two `TIMESTAMP_TZ` values at
+the same instant but different UTC offsets are equal as timestamps yet cast to different
+strings.) A null-to-value or value-to-null transition counts as changed and null-to-null
+does not. The whole object is `NULL` for a key's first version, matching `_previous`.
 
 ```
 -- first version
@@ -158,7 +163,7 @@ case
   when lag(<updated_at_col>) over (partition by <unique_keys_csv> order by <updated_at_col>) is null
     then cast(null as object)
   else object_construct_keep_null(
-    'col_a', (col_a is distinct from lag(col_a) over (partition by <unique_keys_csv> order by <updated_at_col>)),
+    'col_a', (cast(col_a as varchar) is distinct from lag(cast(col_a as varchar)) over (partition by <unique_keys_csv> order by <updated_at_col>)),
     ...
   )
 end
@@ -225,7 +230,12 @@ the same CTE that already produces the SCD2 audit columns.
 - Empty `scd_check_columns` (nothing tracked): `_previous` and `_changed` become empty
   objects on non-first versions. Unlikely; documented, not special-cased.
 - A tracked column null in the prior version: appears in `_previous` with a null value; its
-  `_changed` flag reflects `IS DISTINCT FROM`.
+  `_changed` flag reflects `IS DISTINCT FROM` over the varchar casts.
+- Two values equal by type but with different string casts (for example same-instant
+  `TIMESTAMP_TZ` values at different UTC offsets): they create a new version (their varchar
+  casts differ, so the hash differs) and `_changed` reports the column as changed, because
+  the comparison is on the same varchar casts. `_changed` therefore never contradicts the
+  existence of a version.
 - Switch set on a type 0/1 model: warning at plan time; the columns are not produced.
 
 ## Testing

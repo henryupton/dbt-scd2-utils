@@ -1,0 +1,13 @@
+version: 2
+
+seeds:
+  - name: changed_flag_gap_raw_1
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: event_at_str
+        data_type: varchar
+      - name: _created_at
+        data_type: timestamp_tz
+      - name: _updated_at
+        data_type: timestamp_tz
