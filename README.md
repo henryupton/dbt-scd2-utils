@@ -139,6 +139,7 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `changed_columns_column` | ❌ | `_CHANGED` | Name of the change-map object column |
 | `track_checksum` | ❌ | `false` | Add a `_CHECKSUM` md5 content fingerprint of the business columns (all SCD types) |
 | `checksum_column` | ❌ | `_CHECKSUM` | Name of the checksum column |
+| `checksum_exclude` | ❌ | `[]` | Columns to omit from the `_checksum` fingerprint (e.g. volatile processing timestamps) |
 
 ### Audit Column Names
 
@@ -376,14 +377,24 @@ columns, using the same `generate_surrogate_key` hash the wider platform uses fo
 - Two rows with the same `_checksum` have identical business content. On type 0 it is set
   once for the retained row; on type 1 it is recomputed when the row is overwritten; on
   type 2 each version carries its own.
+- The column set is derived automatically, so any **volatile column the model emits** (an
+  ingestion timestamp such as `_written_at` or `_loaded_at`, a `sysdate()` value, a batch
+  id) is folded into the fingerprint and makes `_checksum` differ for otherwise-identical
+  content. List such columns under `checksum_exclude` (case-insensitive) to keep the
+  "same checksum means same content" guarantee:
+
+  ```sql
+  meta={'track_checksum': true, 'checksum_exclude': ['_written_at']}
+  ```
+
 - Enabling it adds a column, so run a one-off `--full-refresh` when you turn it on for an
   already-built model, otherwise the next incremental run errors on the new column (the same
   requirement as `track_previous_version` / `track_changed_columns` and `deleted_at_column`).
 
-**Limitation:** the column set is derived automatically and is cast to `varchar` for the
-hash, so non-scalar columns (`ARRAY` / `OBJECT` / `VARIANT` / `GEOGRAPHY`) in scope may
-error or hash non-deterministically. Keep such columns out of the model, or out of scope
-for the checksum, if you enable this.
+**Limitation:** the remaining column set is cast to `varchar` for the hash, so non-scalar
+columns (`ARRAY` / `OBJECT` / `VARIANT` / `GEOGRAPHY`) still in scope may error or hash
+non-deterministically. Keep such columns out of the model, or list them in
+`checksum_exclude`, if you enable this.
 
 ## Deletion Support
 

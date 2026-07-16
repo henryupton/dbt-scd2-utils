@@ -49,8 +49,10 @@
     {%- set business_cols = dbt_scd2_utils.list_difference(all_dest_columns, audit_cols_names, case_insensitive=true) -%}
     {%- set business_cols_csv = dbt_scd2_utils.get_quoted_csv(business_cols) -%}
 
-    {# On a match we overwrite the business columns, but never the key columns. #}
+    {# On a match we overwrite the business columns, but never the key columns. The #}
+    {# content checksum (an audit column) is recomputed alongside them when enabled. #}
     {%- set update_cols = dbt_scd2_utils.list_difference(business_cols, unique_key, case_insensitive=true) -%}
+    {%- if track_checksum -%}{%- do update_cols.append(checksum_col) -%}{%- endif -%}
 
     {%- set all_cols_names = business_cols + audit_cols_names -%}
     {%- set all_cols_csv = dbt_scd2_utils.get_quoted_csv(all_cols_names) -%}
@@ -89,14 +91,12 @@ on (
         DBT_INTERNAL_DEST.{{ col }} = DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %} and {% endif %}
     {%- endfor %}
 )
-{# Overwrite the latest business values; leave the audit columns as they are. #}
+{# Overwrite the latest business values (and the checksum, if tracked); leave the #}
+{# remaining audit columns as they are. #}
 when matched then update set
     {% for col in update_cols %}
         DBT_INTERNAL_DEST.{{ col }} = DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %},{% endif %}
     {%- endfor %}
-    {%- if track_checksum %},
-        DBT_INTERNAL_DEST.{{ checksum_col }} = DBT_INTERNAL_SOURCE.{{ checksum_col }}
-    {%- endif %}
 {# New key: insert the row with its SCD1 audit columns. #}
 when not matched then insert ({{ all_cols_csv }})
 values ({{ all_cols_csv }})

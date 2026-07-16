@@ -27,7 +27,7 @@
 
 {%- macro get_changed_columns_sql(scd_check_columns, unique_keys_csv, updated_at_col) -%}
 case
-  when lag({{ updated_at_col }}) over (partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) is null
+  when row_number() over (partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) = 1
     then cast(null as object)
   else object_construct_keep_null(
     {%- for col in scd_check_columns %}
