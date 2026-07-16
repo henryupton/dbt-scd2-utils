@@ -175,8 +175,10 @@ it). Changes:
 
 - Resolve `track_previous_version`, `previous_version_column`, `track_changed_columns`, and
   `changed_columns_column` via `get_config_value` / `get_from_object`.
-- Fail fast (alongside the `deleted_at_column` type-0/1 guard): raise a compiler error if
-  either switch is true and `scd_type` is 0 or 1.
+- Alongside the `deleted_at_column` type-0/1 guard: if either switch is true and `scd_type`
+  is 0 or 1, emit a warning (`exceptions.warn`) and do not produce the columns. A warning
+  rather than a hard error keeps a folder-wide `+meta` switch from breaking a layer that
+  includes a type 0/1 model.
 - In the type-2 section only: when a switch is on, append its column name to
   `audit_columns` (fixed order: previous, then changed) so it becomes part of
   `all_cols_names` and the MERGE insert list; and when the switch is on **and**

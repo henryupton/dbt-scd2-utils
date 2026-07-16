@@ -346,6 +346,11 @@ path access is case-sensitive, so read them in lowercase (`_previous:email`,
 out-of-order (backfill) arrival requires `update_all_previous_records=true` (the default).
 This is the same caveat that applies to `_change_type`.
 
+**Enabling on an existing table:** turning a switch on adds a new column, so run a one-off
+`--full-refresh` when you enable it on an already-built model. Without it the next
+incremental run errors with an invalid-identifier on the new column (the same requirement
+as adding `deleted_at_column` to an existing model).
+
 ## Deletion Support
 
 Track logical deletions and resurrections:
