@@ -38,6 +38,9 @@
     {%- set updated_at_col = arg_dict['updated_at_column'] -%}
     {%- set created_at_col = arg_dict.get('created_at_column') -%}
     {%- set change_type_col = arg_dict['change_type_column'] -%}
+    {%- set track_checksum = arg_dict.get('track_checksum', false) -%}
+    {%- set checksum_col = arg_dict.get('checksum_column') -%}
+    {%- set checksum_columns = arg_dict.get('checksum_columns', []) -%}
 
     {%- set unique_keys_csv = dbt_scd2_utils.get_quoted_csv(unique_key | map("upper")) -%}
     {%- set all_dest_columns = dest_columns | map(attribute='name') | map('upper') | list -%}
@@ -46,8 +49,10 @@
     {%- set business_cols = dbt_scd2_utils.list_difference(all_dest_columns, audit_cols_names, case_insensitive=true) -%}
     {%- set business_cols_csv = dbt_scd2_utils.get_quoted_csv(business_cols) -%}
 
-    {# On a match we overwrite the business columns, but never the key columns. #}
+    {# On a match we overwrite the business columns, but never the key columns. The #}
+    {# content checksum (an audit column) is recomputed alongside them when enabled. #}
     {%- set update_cols = dbt_scd2_utils.list_difference(business_cols, unique_key, case_insensitive=true) -%}
+    {%- if track_checksum -%}{%- do update_cols.append(checksum_col) -%}{%- endif -%}
 
     {%- set all_cols_names = business_cols + audit_cols_names -%}
     {%- set all_cols_csv = dbt_scd2_utils.get_quoted_csv(all_cols_names) -%}
@@ -76,6 +81,9 @@ using (
         {%- endif %} as {{ valid_from_col }},
         {{ dbt_scd2_utils.parse_timestamp_literal(var('default_valid_to', '2999-12-31 23:59:59')) }} as {{ valid_to_col }},
         'I' as {{ change_type_col }}
+        {%- if track_checksum %},
+        {{ dbt_scd2_utils.get_checksum_sql(checksum_columns) }} as {{ checksum_col }}
+        {%- endif %}
     from dedup
 ) AS DBT_INTERNAL_SOURCE
 on (
@@ -83,7 +91,8 @@ on (
         DBT_INTERNAL_DEST.{{ col }} = DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %} and {% endif %}
     {%- endfor %}
 )
-{# Overwrite the latest business values; leave the audit columns as they are. #}
+{# Overwrite the latest business values (and the checksum, if tracked); leave the #}
+{# remaining audit columns as they are. #}
 when matched then update set
     {% for col in update_cols %}
         DBT_INTERNAL_DEST.{{ col }} = DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %},{% endif %}

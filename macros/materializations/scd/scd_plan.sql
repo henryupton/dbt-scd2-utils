@@ -45,6 +45,13 @@
   {%- set change_type_col = dbt_scd2_utils.get_config_value(config, 'change_type_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'change_type_column')) -%}
   {%- set created_at_col = dbt_scd2_utils.get_config_value(config, 'created_at_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'created_at_column', default=none)) -%}
   {%- set deleted_at_col = dbt_scd2_utils.get_config_value(config, 'deleted_at_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'deleted_at_column', default=none)) -%}
+  {%- set track_previous_version = dbt_scd2_utils.get_config_value(config, 'track_previous_version', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'track_previous_version', default=false)) -%}
+  {%- set previous_version_col = dbt_scd2_utils.get_config_value(config, 'previous_version_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'previous_version_column', default='_PREVIOUS')) -%}
+  {%- set track_changed_columns = dbt_scd2_utils.get_config_value(config, 'track_changed_columns', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'track_changed_columns', default=false)) -%}
+  {%- set changed_columns_col = dbt_scd2_utils.get_config_value(config, 'changed_columns_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'changed_columns_column', default='_CHANGED')) -%}
+  {%- set track_checksum = dbt_scd2_utils.get_config_value(config, 'track_checksum', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'track_checksum', default=false)) -%}
+  {%- set checksum_col = dbt_scd2_utils.get_config_value(config, 'checksum_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'checksum_column', default='_CHECKSUM')) -%}
+  {%- set checksum_exclude = dbt_scd2_utils.get_config_value(config, 'checksum_exclude', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'checksum_exclude', default=[])) -%}
 
   {%- set unique_key = config.get('unique_key') -%}
 
@@ -75,6 +82,19 @@
     {{ exceptions.raise_compiler_error(error_message) }}
   {%- endif -%}
 
+  {# _previous / _changed track version history, which only exists for SCD type 2. On #}
+  {# types 0/1 we warn and omit the columns rather than error, so a folder-wide +meta #}
+  {# switch does not break a layer that includes a type 0/1 model. The columns are #}
+  {# appended only in the type-2 section below, so they are naturally not produced here. #}
+  {%- if scd_type in [0, 1] and (track_previous_version or track_changed_columns) -%}
+    {%- set warning_message -%}
+      track_previous_version / track_changed_columns are set on an SCD type {{ scd_type }} model
+      ({{ target_relation }}), but these columns are only produced for SCD type 2 (version history).
+      They will be ignored for this model.
+    {%- endset -%}
+    {{ exceptions.warn(warning_message) }}
+  {%- endif -%}
+
   {{ log("Building SCD Type " ~ scd_type ~ " table " ~ target_relation) }}
 
   {# Build the temp table with source data #}
@@ -101,6 +121,19 @@
     {%- endif -%}
   {%- endfor -%}
 
+  {# Content checksum column set: business columns (including the natural key) minus the #}
+  {# audit columns, the lifecycle columns, and any user-listed checksum_exclude columns, #}
+  {# sorted so the fingerprint is independent of select-list order. Exclude volatile #}
+  {# processing columns (e.g. an ingestion timestamp) here so identical business content #}
+  {# yields a stable checksum. Shared by all SCD types; computed from the base audit #}
+  {# columns before the type-2-only _previous / _changed are appended. #}
+  {%- set checksum_lifecycle_cols = [] -%}
+  {%- for c in [updated_at_col, created_at_col, deleted_at_col] -%}
+    {%- if c is not none -%}{%- do checksum_lifecycle_cols.append(c) -%}{%- endif -%}
+  {%- endfor -%}
+  {%- set checksum_columns = dbt_scd2_utils.list_difference(dest_column_names_upper, dbt_scd2_utils.list_union(audit_columns, checksum_lifecycle_cols, (checksum_exclude or [])), case_insensitive=true) | sort -%}
+  {%- if track_checksum -%}{%- do audit_columns.append(checksum_col) -%}{%- endif -%}
+
   {%- set should_full_refresh = (should_full_refresh() or existing_relation is none) -%}
 
   {# ------------------------------------------------------------------ #}
@@ -120,7 +153,10 @@
         'valid_to_column': valid_to_col,
         'updated_at_column': updated_at_col,
         'change_type_column': change_type_col,
-        'created_at_column': created_at_col
+        'created_at_column': created_at_col,
+        'track_checksum': track_checksum,
+        'checksum_column': checksum_col,
+        'checksum_columns': checksum_columns
     } -%}
 
     {%- if not should_full_refresh -%}
@@ -184,7 +220,13 @@
   {# No updating all previous records results in multiple 'I' records. #}
   {%- if update_all_previous_records -%}
     {%- do merge_update_cols.append(change_type_col) -%}
+    {%- if track_previous_version -%}{%- do merge_update_cols.append(previous_version_col) -%}{%- endif -%}
+    {%- if track_changed_columns -%}{%- do merge_update_cols.append(changed_columns_col) -%}{%- endif -%}
   {%- endif -%}
+
+  {# Optional SCD2-only audit columns: prior-version object and per-column change map. #}
+  {%- if track_previous_version -%}{%- do audit_columns.append(previous_version_col) -%}{%- endif -%}
+  {%- if track_changed_columns -%}{%- do audit_columns.append(changed_columns_col) -%}{%- endif -%}
 
   {# New configuration approach with change_columns object #}
   {%- set change_columns_config = dbt_scd2_utils.get_config_value(config, 'change_columns', default=none) -%}
@@ -252,7 +294,14 @@
       'updated_at_column': updated_at_col,
       'change_type_column': change_type_col,
       'created_at_column': created_at_col,
-      'deleted_at_column': deleted_at_col
+      'deleted_at_column': deleted_at_col,
+      'track_previous_version': track_previous_version,
+      'previous_version_column': previous_version_col,
+      'track_changed_columns': track_changed_columns,
+      'changed_columns_column': changed_columns_col,
+      'track_checksum': track_checksum,
+      'checksum_column': checksum_col,
+      'checksum_columns': checksum_columns
   }  %}
 
   {%- if should_full_refresh -%}

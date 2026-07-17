@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: prev_changed_scd2
+    description: >
+      Exercises the optional _previous (prior tracked-column values) and _changed
+      (per-tracked-column change booleans) audit columns, including recomputation
+      of an existing version's objects after an out-of-order backfill.
+    tests:
+      - dbt_scd2_utils.one_current_per_key:
+          arguments:
+            key_columns: [customer_id]
+            current_column: _is_current
+
+      - dbt_scd2_utils.no_validity_overlaps:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+      - dbt_scd2_utils.continuous_validity_windows:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+      - dbt_scd2_utils.latest_row_is_current:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            current_column: _is_current

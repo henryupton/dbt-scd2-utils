@@ -133,6 +133,13 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `scd_check_columns` | ❌ | all columns | **(Legacy)** Columns to track for changes |
 | `exclude_columns_from_change_check` | ❌ | `[]` | **(Legacy)** Columns to exclude from change tracking |
 | `deleted_at_column` | ❌ | none | Column for logical deletion tracking |
+| `track_previous_version` | ❌ | `false` | (SCD2 only) add an OBJECT column with the prior version's tracked columns |
+| `previous_version_column` | ❌ | `_PREVIOUS` | Name of the previous-version object column |
+| `track_changed_columns` | ❌ | `false` | (SCD2 only) add an OBJECT column of per-tracked-column change booleans |
+| `changed_columns_column` | ❌ | `_CHANGED` | Name of the change-map object column |
+| `track_checksum` | ❌ | `false` | Add a `_CHECKSUM` md5 content fingerprint of the business columns (all SCD types) |
+| `checksum_column` | ❌ | `_CHECKSUM` | Name of the checksum column |
+| `checksum_exclude` | ❌ | `[]` | Columns to omit from the `_checksum` fingerprint (e.g. volatile processing timestamps) |
 
 ### Audit Column Names
 
@@ -279,6 +286,115 @@ meta={
   'exclude_columns_from_change_check': ['metadata']
 }
 ```
+
+## Previous Version and Change Tracking
+
+Two optional OBJECT columns record, for each version, what the entity looked like before
+and which tracked columns moved. Both are off by default, are enabled per model, and apply
+to SCD type 2 only (setting either on a type 0 or type 1 model logs a warning and the
+columns are simply not produced). You can turn them on for a staging layer without
+affecting dimension tables.
+
+```sql
+{{
+  config(
+    materialized='incremental_scd2',
+    unique_key=['customer_id'],
+    meta={
+      'track_previous_version': true,
+      'track_changed_columns': true
+    }
+  )
+}}
+
+select
+    customer_id,
+    email,
+    status,
+    updated_at as _updated_at
+from {{ source('raw', 'customers') }}
+```
+
+- **`_previous`** holds the tracked columns of the immediately preceding version. The first
+  version of a key has no predecessor, so its `_previous` is `NULL`.
+- **`_changed`** holds one boolean per tracked column, `true` when that column changed since
+  the prior version. It is `NULL` for a key's first version.
+
+Both objects cover only the tracked change columns (the same set that triggers a new
+version), and both use lowercased keys.
+
+| customer_id | email | status | _previous | _changed |
+|-------------|-------|--------|-----------|----------|
+| 123 | john@old.com | active | null | null |
+| 123 | john@new.com | active | `{"email":"john@old.com","status":"active"}` | `{"email":true,"status":false}` |
+
+Enable a whole layer via `dbt_project.yml`:
+
+```yaml
+models:
+  my_project:
+    staging:
+      +meta:
+        track_previous_version: true
+        track_changed_columns: true
+    marts:
+      # dimension tables leave the switches off
+```
+
+**Limitation (case sensitivity):** object keys are stored lowercase, and Snowflake object
+path access is case-sensitive, so read them in lowercase (`_previous:email`,
+`_changed:email`) even though the underlying columns are uppercase.
+
+**Backfill note:** correct recomputation of these objects for existing versions after an
+out-of-order (backfill) arrival requires `update_all_previous_records=true` (the default).
+This is the same caveat that applies to `_change_type`.
+
+**Enabling on an existing table:** turning a switch on adds a new column, so run a one-off
+`--full-refresh` when you enable it on an already-built model. Without it the next
+incremental run errors with an invalid-identifier on the new column (the same requirement
+as adding `deleted_at_column` to an existing model).
+
+## Content Checksum
+
+An optional `_checksum` column emits an md5 content fingerprint of the row's business
+columns, using the same `generate_surrogate_key` hash the wider platform uses for staging
+`_checksum`. It is off by default, enabled per model, and available on all SCD types.
+
+```sql
+{{
+  config(
+    materialized='scd',
+    unique_key=['customer_id'],
+    meta={'scd_type': 2, 'track_checksum': true}
+  )
+}}
+```
+
+- The fingerprint covers all business columns **including the natural key**, and excludes
+  the SCD audit columns and the lifecycle columns (`updated_at`, `created_at`,
+  `deleted_at`). Columns are hashed in alphabetical order, so `_checksum` is stable
+  regardless of select-list order.
+- Two rows with the same `_checksum` have identical business content. On type 0 it is set
+  once for the retained row; on type 1 it is recomputed when the row is overwritten; on
+  type 2 each version carries its own.
+- The column set is derived automatically, so any **volatile column the model emits** (an
+  ingestion timestamp such as `_written_at` or `_loaded_at`, a `sysdate()` value, a batch
+  id) is folded into the fingerprint and makes `_checksum` differ for otherwise-identical
+  content. List such columns under `checksum_exclude` (case-insensitive) to keep the
+  "same checksum means same content" guarantee:
+
+  ```sql
+  meta={'track_checksum': true, 'checksum_exclude': ['_written_at']}
+  ```
+
+- Enabling it adds a column, so run a one-off `--full-refresh` when you turn it on for an
+  already-built model, otherwise the next incremental run errors on the new column (the same
+  requirement as `track_previous_version` / `track_changed_columns` and `deleted_at_column`).
+
+**Limitation:** the remaining column set is cast to `varchar` for the hash, so non-scalar
+columns (`ARRAY` / `OBJECT` / `VARIANT` / `GEOGRAPHY`) still in scope may error or hash
+non-deterministically. Keep such columns out of the model, or list them in
+`checksum_exclude`, if you enable this.
 
 ## Deletion Support
 
