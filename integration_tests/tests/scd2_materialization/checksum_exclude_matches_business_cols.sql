@@ -7,4 +7,4 @@
 -- batch_id) share one checksum, since their oracle values are identical.
 select customer_id, _updated_at, _checksum
 from {{ ref('checksum_exclude_scd2') }}
-where _checksum is distinct from {{ dbt_utils.generate_surrogate_key(['customer_id', 'customer_name', 'email', 'status']) }}
+where _checksum is distinct from {{ dbt_scd2_utils.to_uuid(dbt_utils.generate_surrogate_key(['customer_id', 'customer_name', 'email', 'status'])) }}

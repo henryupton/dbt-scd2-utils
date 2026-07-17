@@ -239,7 +239,7 @@ using (
                 cast(null as timestamp_tz) as {{ valid_to_col }},
                 cast(null as varchar) as {{ change_type_col }},
                 {%- if track_checksum %}
-                cast(null as varchar) as {{ checksum_col }},
+                {{ dbt_scd2_utils.to_uuid('cast(null as varchar)') }} as {{ checksum_col }},
                 {%- endif %}
                 {%- if track_previous_version %}
                 cast(null as object) as {{ previous_version_col }},

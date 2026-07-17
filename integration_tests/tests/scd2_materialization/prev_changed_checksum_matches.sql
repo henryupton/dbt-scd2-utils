@@ -5,4 +5,4 @@
 -- listed in the alphabetical order the implementation hashes.
 select customer_id, _updated_at, _checksum
 from {{ ref('prev_changed_scd2') }}
-where _checksum is distinct from {{ dbt_utils.generate_surrogate_key(['customer_id', 'customer_name', 'email', 'status', '_written_at'] | sort) }}
+where _checksum is distinct from {{ dbt_scd2_utils.to_uuid(dbt_utils.generate_surrogate_key(['customer_id', 'customer_name', 'email', 'status', '_written_at'] | sort)) }}

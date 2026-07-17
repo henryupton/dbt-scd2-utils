@@ -5,10 +5,17 @@ Date: 2026-07-16
 ## Summary
 
 Add an optional, opt-in `_checksum` audit column to the `scd` / `incremental_scd2`
-materialization, for all SCD types (0, 1, and 2). It is a content fingerprint of the
-model's business columns, computed with the same `generate_surrogate_key` (md5) function
-that the envato-data-platform staging layer uses for its `_checksum` (via the
-`generate_checksum` wrapper). Off by default, so existing models are unaffected.
+materialization, for all SCD types (0, 1, and 2). It is a native-UUID content fingerprint of
+the model's business columns, computed with the same `generate_surrogate_key` (md5) function
+that the envato-data-platform staging layer uses for its `_checksum`, then reformatted to
+`8-4-4-4-12` and cast to a UUID via `to_uuid` — exactly as edp's `generate_checksum`
+(through its overridden `generate_surrogate_key`) does. Off by default, so existing models are
+unaffected.
+
+**Update (native UUID):** the column was originally emitted as the raw 32-char md5 hex
+string. It is now a native UUID, to match edp surrogate keys / `generate_checksum`. This is a
+breaking change to the column's type and values: run a `--full-refresh` on any model that
+already has `track_checksum` enabled, and declare `data_type: uuid` in contract YAML.
 
 ## Motivation
 
@@ -45,7 +52,7 @@ applies to every SCD type, so there is no type-0/1 warning.
 
 ## Column contents
 
-`_checksum = generate_surrogate_key(checksum_columns)` where:
+`_checksum = to_uuid(generate_surrogate_key(checksum_columns))` where:
 
 - **`checksum_columns` = all source columns EXCEPT the SCD audit columns and the lifecycle
   columns** (`updated_at_column`, `created_at_column`, `deleted_at_column`). That is, the
@@ -54,8 +61,9 @@ applies to every SCD type, so there is no type-0/1 warning.
   never the lifecycle / audit / watermark columns.
 - Columns are **sorted alphabetically** (case-insensitive) before hashing, so the checksum is
   deterministic regardless of select-list ordering (envato does this deliberately).
-- The hash is the standard `dbt_utils.generate_surrogate_key` md5 hex string, identical in
-  algorithm to envato's `generate_checksum`.
+- The hash is the standard `dbt_utils.generate_surrogate_key` md5, then wrapped in `to_uuid`
+  (reformatted to `8-4-4-4-12` and cast to the native UUID type), identical to envato's
+  `generate_checksum`.
 
 This is intentionally NOT the same as the package's internal `_scd2_hash` (which excludes the
 key, excludes `updated_at`, is not sorted, and honours `change_columns`): `_scd2_hash` drives
@@ -64,7 +72,7 @@ version detection, `_checksum` is a stable full-content fingerprint.
 Example (business columns `customer_id`, `email`, `status`; lifecycle `_updated_at`):
 
 ```
-_checksum = md5( customer_id | email | status )   -- alphabetical, one 32-char hex string
+_checksum = to_uuid( md5( customer_id | email | status ) )   -- alphabetical, native UUID
 ```
 
 ## Value derivation and immutability
@@ -79,17 +87,24 @@ dependence on neighbouring versions). Its behaviour on write differs by type:
 - **Type 2** (versioned history): computed per version on insert. A version's business
   columns are immutable, so `_checksum` is NOT added to `merge_update_cols` (unlike
   `_previous` / `_changed`, which shift with neighbours). `redundant_versions` carries a
-  `cast(null as varchar)` placeholder so the `union all` stays aligned; those rows are
-  deleted by the MERGE, so the value is irrelevant.
+  `to_uuid(cast(null as varchar))` placeholder (a UUID-typed null) so the `union all` stays
+  aligned and resolves to the UUID type; those rows are deleted by the MERGE, so the value is
+  irrelevant.
 
 ## Components and changes
 
 All paths are under the SCD framework (`macros/materializations/scd/`).
 
-### New macro
+### New macros
+
+`macros/to_uuid.sql`: `to_uuid(column)` reformats a 32-char hex string to `8-4-4-4-12` and
+wraps it in Snowflake's `TO_UUID()`, yielding the native UUID type. A local replica of edp's
+`to_uuid` (this package cannot override the global `generate_surrogate_key` the way edp does
+without leaking into consumers, so the UUID wrapping lives here instead).
 
 `macros/materializations/scd/columns/get_checksum_sql.sql`:
-`get_checksum_sql(checksum_columns)` returns `{{ dbt_utils.generate_surrogate_key(checksum_columns) }}`.
+`get_checksum_sql(checksum_columns)` returns
+`{{ dbt_scd2_utils.to_uuid(dbt_utils.generate_surrogate_key(checksum_columns)) }}`.
 A thin, intent-named wrapper (mirrors the other `columns/` macros and envato's
 `generate_checksum`). The caller passes the already-sorted `checksum_columns`.
 
@@ -110,8 +125,8 @@ A thin, intent-named wrapper (mirrors the other `columns/` macros and envato's
 - `types/type_2/get_initial_load_scd2_sql.sql`: in the final select, emit `_checksum` after
   `_change_type` and before the existing `_previous` / `_changed` conditionals.
 - `types/type_2/get_incremental_scd2_sql.sql`: same position in `scd2_versions`; add a
-  `cast(null as varchar)` placeholder in `redundant_versions` at the matching position. Not
-  added to `merge_update_cols`.
+  `to_uuid(cast(null as varchar))` (UUID-typed null) placeholder in `redundant_versions` at
+  the matching position. Not added to `merge_update_cols`.
 
 ### Type 0 builders
 
@@ -151,7 +166,7 @@ Add integration coverage across all three types, with `track_checksum` enabled:
   with the same business columns in different order produce the same checksum).
 
 Assertions use singular tests (SQL returning offending rows) and, where practical,
-`generate_surrogate_key` recomputed in the test as an oracle.
+`to_uuid(generate_surrogate_key(...))` recomputed in the test as an oracle.
 
 ## Documentation
 

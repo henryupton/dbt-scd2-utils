@@ -137,7 +137,7 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `previous_version_column` | ❌ | `_PREVIOUS` | Name of the previous-version object column |
 | `track_changed_columns` | ❌ | `false` | (SCD2 only) add an OBJECT column of per-tracked-column change booleans |
 | `changed_columns_column` | ❌ | `_CHANGED` | Name of the change-map object column |
-| `track_checksum` | ❌ | `false` | Add a `_CHECKSUM` md5 content fingerprint of the business columns (all SCD types) |
+| `track_checksum` | ❌ | `false` | Add a `_CHECKSUM` native-UUID content fingerprint of the business columns (all SCD types) |
 | `checksum_column` | ❌ | `_CHECKSUM` | Name of the checksum column |
 | `checksum_exclude` | ❌ | `[]` | Columns to omit from the `_checksum` fingerprint (e.g. volatile processing timestamps) |
 
@@ -356,9 +356,11 @@ as adding `deleted_at_column` to an existing model).
 
 ## Content Checksum
 
-An optional `_checksum` column emits an md5 content fingerprint of the row's business
-columns, using the same `generate_surrogate_key` hash the wider platform uses for staging
+An optional `_checksum` column emits a native-UUID content fingerprint of the row's business
+columns. The `generate_surrogate_key` md5 is reformatted to `8-4-4-4-12` and cast to a UUID
+via `to_uuid`, matching how the wider platform builds its surrogate keys and staging
 `_checksum`. It is off by default, enabled per model, and available on all SCD types.
+Declare `data_type: uuid` for the column in any enforced-contract model.
 
 ```sql
 {{
