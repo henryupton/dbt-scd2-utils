@@ -6,28 +6,30 @@
 }}
 
 {#
-    Regression reproduction for null-bearing unique keys.
+    Regression reproduction and exhaustive coverage for null-bearing unique keys.
 
-    `region` is part of the unique_key but is NULL for customer 1, and the
-    source re-reports that key across iterations (iteration 2 carries the
-    same customer 1 row with a changed status, plus an unchanged customer 2).
+    `region` is part of the unique_key. Three distinct entities carry a NULL in
+    the key -- (1, NULL), (3, NULL) and the fully-null key (NULL, NULL) -- alongside
+    a non-null control (2, US). The source re-reports these keys across three
+    iterations with a mix of changes and no-op re-reports, so the incremental path
+    must (a) match and expire the right prior version of each null-bearing key,
+    (b) keep the three null-bearing keys distinct from one another, and (c) not
+    emit a spurious version for an unchanged re-report.
 
-    Before the null-safe-key fix the incremental MERGE matched existing
-    versions with per-column raw equality (DBT_INTERNAL_DEST.col =
-    DBT_INTERNAL_SOURCE.col) and the previous_record lookup matched with
-    p.col = n.col. NULL = NULL is UNKNOWN, so customer 1 never matched its
-    already-persisted version: the prior current row was never expired and a
-    fresh current row was inserted every run, accumulating duplicate current
-    versions. one_current_per_key catches it.
+    Both the incremental MERGE and the previous_record lookup must match on a
+    null-safe key: NULL = NULL is UNKNOWN, so raw per-column equality leaves a
+    null-bearing key's prior current row un-expired and re-inserts a fresh current
+    version each run, accumulating duplicate current versions. one_current_per_key
+    catches that failure mode; matches_expected_seed pins the exact full history.
 
     Run across iterations to exercise the incremental path, e.g.
-    ./test_scd2_sequence.sh 1 2 null_key_scd2
+    ./test_scd2_sequence.sh 1 3 null_key_scd2
 #}
 
-{#- Only two states exist (initial load, then the re-report). Clamp so the
-    model still parses for any iteration value used by the shared sequence runner. -#}
+{#- Three states exist (initial load, then two re-reports). Clamp so the model
+    still parses for any iteration value used by the shared sequence runner. -#}
 {%- set iteration = var('iteration', 1) | int -%}
-{%- set seed_iteration = 1 if iteration < 2 else 2 -%}
+{%- set seed_iteration = iteration if 1 <= iteration <= 3 else (1 if iteration < 1 else 3) -%}
 
 select
     customer_id,

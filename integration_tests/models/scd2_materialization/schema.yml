@@ -114,13 +114,16 @@ models:
 
   - name: null_key_scd2
     description: >
-      Regression reproduction for null-bearing unique keys. `region` is part
-      of the unique_key but is NULL for one customer, whose key is re-reported
-      across iterations. Both the incremental MERGE and the previous_record
-      lookup must match on the null-safe surrogate hash of the key, not
-      per-column raw equality — otherwise NULL = NULL (UNKNOWN) leaves the
-      prior current row un-expired and re-inserts a fresh current version each
-      run. Run via ./test_scd2_sequence.sh 1 2 null_key_scd2.
+      Regression reproduction and exhaustive coverage for null-bearing unique keys.
+      `region` is part of the unique_key; three distinct entities carry a NULL in the
+      key -- (1, NULL), (3, NULL) and the fully-null (NULL, NULL) -- plus a non-null
+      control (2, US), re-reported across three iterations with changes, no-op
+      re-reports and multi-version chains. Both the incremental MERGE and the
+      previous_record lookup must match on a null-safe key: otherwise NULL = NULL
+      (UNKNOWN) leaves a prior current row un-expired and re-inserts a fresh current
+      version each run, and distinct null-bearing keys could collapse together.
+      one_current_per_key catches the duplicate-current failure; matches_expected_seed
+      pins the exact full history. Run via ./test_scd2_sequence.sh 1 3 null_key_scd2.
     tests:
       - dbt_scd2_utils.one_current_per_key:
           arguments:
@@ -155,6 +158,14 @@ models:
           arguments:
             valid_from_column: _valid_from
             valid_to_column: _valid_to
+
+      # Golden full-history snapshot, keyed by iteration. The strongest guard for
+      # behaviour-preserving changes to the null-safe key match: any drift in the
+      # exact rows, validity windows or change types for a null-bearing key fails.
+      - matches_expected_seed:
+          arguments:
+            seed_prefix: null_key_expected
+            compare_columns: [customer_id, region, status, _valid_from, _valid_to, _is_current, _change_type]
 
   - name: customers_scd2_contract
     description: >

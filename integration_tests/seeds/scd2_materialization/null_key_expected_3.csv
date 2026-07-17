@@ -1,0 +1,9 @@
+customer_id,region,status,_valid_from,_valid_to,_is_current,_change_type
+1,,active,2024-01-01,2024-01-02,false,I
+1,,suspended,2024-01-02,2024-01-03,false,U
+1,,active,2024-01-03,2999-12-31 23:59:59,true,U
+2,US,active,2024-01-01,2999-12-31 23:59:59,true,I
+3,,active,2024-01-01,2024-01-04,false,I
+3,,inactive,2024-01-04,2999-12-31 23:59:59,true,U
+,,active,2024-01-01,2024-01-05,false,I
+,,suspended,2024-01-05,2999-12-31 23:59:59,true,U

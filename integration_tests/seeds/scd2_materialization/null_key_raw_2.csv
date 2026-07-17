@@ -1,3 +1,5 @@
 customer_id,region,status,_updated_at
 1,,suspended,2024-01-02
 2,US,active,2024-01-01
+3,,active,2024-01-01
+,,active,2024-01-01
