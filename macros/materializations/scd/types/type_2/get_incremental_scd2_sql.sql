@@ -291,8 +291,16 @@ on (
 {# A matched record flagged for deletion is a version that collapsed out of the timeline. #}
 when matched and DBT_INTERNAL_SOURCE._scd2_op = 'delete' then delete
 {%- endif %}
-{# When a match is found, we update the existing record (this typically happens to set _is_current to false or _valid_to for old records) #}
-when matched {% if collapse_redundant_versions %}and DBT_INTERNAL_SOURCE._scd2_op = 'upsert' {% endif %}then update set
+{# When a match is found, we update the existing record (this typically happens to set _is_current to false or _valid_to for old records). #}
+{# Guard the update so it only fires when at least one tracked audit column actually differs: on an update-all-previous-records run #}
+{# previous_record pulls a key's whole history and re-merges it, but usually only the newly-current version and the one it expires #}
+{# change -- the rest are matched with identical values. Skipping those no-op updates avoids rewriting their micro-partitions. #}
+{# `is distinct from` is null-safe, so it correctly covers the nullable _previous / _changed object columns. #}
+when matched {% if collapse_redundant_versions %}and DBT_INTERNAL_SOURCE._scd2_op = 'upsert' {% endif %}and (
+    {%- for col in merge_update_cols %}
+    DBT_INTERNAL_DEST.{{ col }} is distinct from DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %} or{% endif %}
+    {%- endfor %}
+) then update set
     {% for col in merge_update_cols %}
         DBT_INTERNAL_DEST.{{ col }} = DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %},{% endif %}
     {%- endfor %}
