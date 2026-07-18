@@ -51,10 +51,11 @@ Resolved from the model's `meta` block first, then a global `vars` default under
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `unique_key_not_null` | `true` | `true` → match keys with `=` (prune/SOS-eligible). `false` → match with `equal_null` (null-safe, not SOS-eligible). Unset resolves via the inference ladder below. |
-| `search_optimization` | `false` | `true` → add SOS `EQUALITY` on the `unique_key` columns. May also be a list of columns to override the target set. |
+| `assume_keys_not_null` | `true` | `true` → match keys with `=` (prune/SOS-eligible). `false` → match with `equal_null` (null-safe, not SOS-eligible). Unset resolves via the inference ladder below. |
+| `search_optimization` | `false` | `true` → add SOS `EQUALITY` on the key columns. On/off flag. |
+| `search_optimization_columns` | `unique_key` | Columns to build `search_optimization` on. Ignored when the flag is off. |
 
-`unique_key_not_null` is a three-state control (explicit `true`, explicit `false`, unset),
+`assume_keys_not_null` is a three-state control (explicit `true`, explicit `false`, unset),
 because unset triggers inference:
 
 - **unset (default):** infer from declared constraints, else use `=` protected by the null
@@ -68,7 +69,7 @@ because unset triggers inference:
   config(
     materialized='incremental_scd2',
     unique_key=['customer_id', 'region'],
-    meta={'unique_key_not_null': false}   -- region is genuinely nullable
+    meta={'assume_keys_not_null': false}   -- region is genuinely nullable
   )
 }}
 ```
@@ -78,7 +79,7 @@ because unset triggers inference:
 The operator (`=` vs `equal_null`) used in the `previous_record` `where` and the MERGE `ON`
 is chosen per run by this ladder, cheapest first:
 
-1. **Explicit config.** `unique_key_not_null` set → honour it (`true` → `=`, `false` →
+1. **Explicit config.** `assume_keys_not_null` set → honour it (`true` → `=`, `false` →
    `equal_null`). Done.
 2. **Declared constraints.** Unset, and every `unique_key` column carries a `not_null`
    constraint on the model node (`model.columns[col].constraints`, from schema.yml /
@@ -120,15 +121,15 @@ Opt-in via `search_optimization`. When enabled, the materialization manages the 
 path itself, because the custom `scd` / `incremental_scd2` materialization does not go
 through dbt's built-in table materialization and so never honours native SOS handling.
 
-- **Target columns:** the `unique_key` columns by default (the merge join / lookup keys), or
-  an explicit list when `search_optimization` is a list. `EQUALITY` method only.
+- **Target columns:** `search_optimization_columns`, defaulting to the `unique_key` columns
+  (the merge join / lookup keys). `EQUALITY` method only.
 - **Statement:** `alter table <target> add search optimization on equality(<cols>)`.
 - **Lifecycle / idempotency:** SOS is a persistent table property. `create or replace` on a
-  full refresh drops it, so it must be re-added; on an incremental run it persists and must
-  not be re-added (re-adding an existing path errors). Resolve by reading current state from
-  `show tables` (the `search_optimization` column) / `describe search optimization` and
-  adding only the missing paths. Practically: add after the initial-load/full-refresh create,
-  and no-op when already present.
+  full refresh drops it, so it is re-added on the create; on an incremental run it persists and
+  must not be re-added (re-adding an existing path errors). Resolved by gating on the
+  full-refresh / create path only (`so_columns` is threaded through the plan as `none` on
+  incremental runs), which needs no state lookup. Enabling SOS on an existing model therefore
+  takes effect on the next `--full-refresh`.
 - **Guard against a useless enable:** if `search_optimization` is on but the resolved key
   operator is `equal_null` (nullable keys), warn that SOS will not accelerate the merge while
   the match is null-safe.
@@ -151,7 +152,8 @@ All under `macros/materializations/scd/`.
 
 ### `scd_plan.sql`
 
-- Resolve `unique_key_not_null` (config → var) and `search_optimization`.
+- Resolve `assume_keys_not_null` (config → var), `search_optimization`, and
+  `search_optimization_columns` (default `unique_key`).
 - Run the operator-selection ladder after `build_temp_table` (temp exists) and before the
   merge SQL is generated. Emit the `not_null` inference from `model.columns[...].constraints`
   and, when needed, the fetched null-guard result.
@@ -168,8 +170,9 @@ All under `macros/materializations/scd/`.
 
 ### New macros
 
-- `get_key_match_sql(left_prefix, right_prefix, columns, null_safe)`: returns the `and`-joined
-  per-column predicate, `equal_null(l.c, r.c)` when `null_safe` else `l.c = r.c`. Used by both
+- `get_key_match_sql(columns, left_alias, right_alias, null_safe)`: returns the `and`-joined
+  per-column predicate, `equal_null(l.c, r.c)` when `null_safe` else `l.c = r.c` (aliases passed
+  without the dot, which the macro adds). Used by both
   the lookup `where` and the MERGE `ON` so they can never drift apart (a correctness invariant
   the null_key regression suite depends on).
 - `add_search_optimization(relation, columns)`: reads current SOS state and issues
@@ -196,19 +199,19 @@ All under `macros/materializations/scd/`.
 - **Non-null keys, default path:** existing scd2 golden suites must pass unchanged with `=`
   (proves output-identical for clean data).
 - **Nullable keys, guard fallback:** the `null_key` fixture (nulls in a composite key) with
-  `unique_key_not_null` unset must warn, fall back to `equal_null`, and still match the
+  `assume_keys_not_null` unset must warn, fall back to `equal_null`, and still match the
   existing `null_key_expected_*` golden snapshots from #13.
 - **Nullable keys, explicit `false`:** same golden snapshots, no guard query, no warning.
 - **Declared `not_null`:** a model with `not_null` constraints on the key uses `=` with no
   guard query (assert via the compiled SQL / absence of the guard statement).
 - **SOS lifecycle:** `search_optimization` on → SOS present after initial load; still present
   (not re-added / no error) after an incremental run; re-added after `--full-refresh`.
-- **Useless-enable warning:** `search_optimization` on with `unique_key_not_null: false`
+- **Useless-enable warning:** `search_optimization` on with `assume_keys_not_null: false`
   warns.
 
 ## Documentation
 
-- README configuration table: add `unique_key_not_null` and `search_optimization`.
+- README configuration table: add `assume_keys_not_null` and `search_optimization`.
 - New "Key matching and pruning" subsection: the non-null default, the inference ladder, the
   guard/warning, and the nullable-key opt-out.
 - New "Search Optimization" subsection: opt-in, target columns, Enterprise/cost caveat, and

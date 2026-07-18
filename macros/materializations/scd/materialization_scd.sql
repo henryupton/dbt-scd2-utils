@@ -26,6 +26,11 @@
 
   {{ run_hooks(post_hooks, inside_transaction=True) }}
 
+  {# Opt-in Search Optimization: (re)applied on the create path only (see add_search_optimization). #}
+  {%- if plan.so_columns is not none -%}
+    {%- do dbt_scd2_utils.add_search_optimization(plan.target_relation, plan.so_columns) -%}
+  {%- endif -%}
+
   {# Drop any temp tables we've created along the way. #}
   {%- if plan.tmp_relation is not none -%}
     {%- do adapter.drop_relation(plan.tmp_relation) -%}

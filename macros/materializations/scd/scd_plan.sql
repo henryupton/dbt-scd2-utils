@@ -71,6 +71,17 @@
     {{ exceptions.raise_compiler_error(error_message) }}
   {%- endif -%}
 
+  {# Search Optimization (opt-in). search_optimization is an on/off flag; search_optimization_columns #}
+  {# picks the EQUALITY columns and defaults to the unique_key. Applied by the materialization after a #}
+  {# create (see below); the columns config is ignored when the flag is off. #}
+  {%- set search_optimization = dbt_scd2_utils.get_config_value(config, 'search_optimization', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'search_optimization', default=false)) -%}
+  {%- set search_optimization_columns = dbt_scd2_utils.get_config_value(config, 'search_optimization_columns', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'search_optimization_columns', default=unique_key)) -%}
+  {%- if search_optimization -%}
+    {%- set so_columns = search_optimization_columns -%}
+  {%- else -%}
+    {%- set so_columns = none -%}
+  {%- endif -%}
+
   {# Fail fast (before building the temp table): SCD types 0 and 1 keep a single #}
   {# row per key with no history, so there is nowhere to record a deletion.       #}
   {%- if scd_type in [0, 1] and deleted_at_col is not none -%}
@@ -136,6 +147,10 @@
 
   {%- set should_full_refresh = (should_full_refresh() or existing_relation is none) -%}
 
+  {# Search Optimization is dropped by create-or-replace and persists across merges, so it is #}
+  {# only (re)applied on the create path. On incremental runs the path is already present. #}
+  {%- set apply_so_columns = so_columns if should_full_refresh else none -%}
+
   {# ------------------------------------------------------------------ #}
   {# SCD Types 0 and 1: one row per key. Type 0 never updates (original   #}
   {# value retained); Type 1 overwrites in place. Both forbid deletion    #}
@@ -180,7 +195,7 @@
       {%- endif -%}
     {%- endif -%}
 
-    {{ return({'build_sql': build_sql, 'target_relation': target_relation, 'tmp_relation': tmp_relation}) }}
+    {{ return({'build_sql': build_sql, 'target_relation': target_relation, 'tmp_relation': tmp_relation, 'so_columns': apply_so_columns}) }}
 
   {%- endif -%}
 
@@ -318,6 +333,39 @@
     {# Incremental load: use SCD2 merge logic #}
     {{ log("Performing incremental SCD2 update") }}
 
+    {# ----------------------------------------------------------------- #}
+    {# Resolve the key-match operator for the merge and the previous_record #}
+    {# lookup: plain `=` (prune- and Search-Optimization-eligible) vs the #}
+    {# null-safe `equal_null` (correct for nullable keys, not SOS-eligible). #}
+    {# Ladder, cheapest first: explicit config -> declared not_null -> a #}
+    {# runtime null guard on the delta that warns and falls back to equal_null. #}
+    {# ----------------------------------------------------------------- #}
+    {%- set assume_keys_not_null_cfg = dbt_scd2_utils.get_config_value(config, 'assume_keys_not_null', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'assume_keys_not_null', default=none)) -%}
+    {%- if assume_keys_not_null_cfg is not none -%}
+      {%- set key_match_null_safe = (assume_keys_not_null_cfg | string | lower) not in ['true', '1'] -%}
+    {%- elif dbt_scd2_utils.unique_key_declared_not_null(unique_key) -%}
+      {%- set key_match_null_safe = false -%}
+    {%- else -%}
+      {%- set null_guard_sql -%}
+        select {% for col in unique_key %}count_if({{ col }} is null){{ ' + ' if not loop.last }}{% endfor %} as n_null
+        from {{ tmp_relation }}
+      {%- endset -%}
+      {%- call statement('dbt_scd2_utils_null_key_guard', fetch_result=True) -%}
+        {{ null_guard_sql }}
+      {%- endcall -%}
+      {%- set n_null = load_result('dbt_scd2_utils_null_key_guard')['data'][0][0] | int -%}
+      {%- if n_null > 0 -%}
+        {{ exceptions.warn("dbt_scd2_utils: " ~ n_null ~ " incoming row(s) for " ~ this ~ " have a NULL in unique_key " ~ unique_key ~ "; falling back to null-safe equal_null matching (not Search-Optimization-eligible). Fix the source NULLs to keep the faster `=` match, or set assume_keys_not_null=false to silence this warning.") }}
+        {%- set key_match_null_safe = true -%}
+      {%- else -%}
+        {%- set key_match_null_safe = false -%}
+      {%- endif -%}
+    {%- endif -%}
+
+    {%- if so_columns is not none and key_match_null_safe -%}
+      {{ exceptions.warn("dbt_scd2_utils: search_optimization is enabled on " ~ this ~ " but the key match resolved to null-safe equal_null, which Search Optimization does not accelerate. It will not speed up the merge for this model.") }}
+    {%- endif -%}
+
     {# Build the argument dictionary for the SCD2 SQL macro #}
     {%- do default_arg_dict.update({
       'target_relation': target_relation,
@@ -325,12 +373,13 @@
       'incremental_predicates': config.get('incremental_predicates', []),
       'update_all_previous_records': update_all_previous_records,
       'collapse_redundant_versions': collapse_redundant_versions,
+      'key_match_null_safe': key_match_null_safe,
     }) -%}
 
     {%- set build_sql = dbt_scd2_utils.get_incremental_scd2_sql(default_arg_dict) -%}
 
   {%- endif -%}
 
-  {{ return({'build_sql': build_sql, 'target_relation': target_relation, 'tmp_relation': tmp_relation}) }}
+  {{ return({'build_sql': build_sql, 'target_relation': target_relation, 'tmp_relation': tmp_relation, 'so_columns': apply_so_columns}) }}
 
 {% endmacro %}
