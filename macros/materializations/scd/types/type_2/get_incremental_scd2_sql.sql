@@ -87,7 +87,6 @@ using (
             select
                 {{ dest_cols_csv }},
                 'new' as _source,
-                17 as _priority,
                 {{ dbt_utils.generate_surrogate_key(scd2_unique_key) }} as _scd2_key,
                 {{ dbt_utils.generate_surrogate_key(scd_check_columns | list) }} as _scd2_hash,
             from {{ temp_relation }}
@@ -99,7 +98,6 @@ using (
             select
                 {{ dbt_scd2_utils.get_quoted_csv(dest_cols_names, 'p.') }},
                 'previous' as _source,
-                0 as _priority,
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd2_unique_key, 'p.')) }} as _scd2_key,
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd_check_columns, 'p.')) }} as _scd2_hash,
             from {{ this }} as p
@@ -134,7 +132,6 @@ using (
                 {{ col }},
                 {%- endfor %}
                 _source,
-                _priority,
                 _scd2_key,
                 _scd2_hash,
             from new_records
@@ -146,7 +143,6 @@ using (
                 {{ col }},
                 {%- endfor %}
                 _source,
-                _priority,
                 _scd2_key,
                 _scd2_hash,
             from previous_record
@@ -154,8 +150,9 @@ using (
         -- select * from all_records {{ unique_keys_csv }}, {{ updated_at_col }} limit 321;
         ,
 
-        {# Make sure we have only one record for each unique key, updated_at permutation. #}
-        {# Prioritise existing record over a new one in the case of a duplicate. Why would something have changed but not produced a new updated_at? #}
+        {# One row per (unique_key, updated_at) permutation. When the same permutation arrives from #}
+        {# both the new batch and the persisted history, an arbitrary survivor is kept (order by a #}
+        {# constant): a stable updated_at is assumed not to coincide with changed content. #}
         pick_a_key_any_key as (
             select
                 *
@@ -227,8 +224,7 @@ using (
                 {%- if track_changed_columns %}
                 {{ dbt_scd2_utils.get_changed_columns_sql(scd_check_columns, unique_keys_csv, updated_at_col) }} as {{ changed_columns_col }},
                 {%- endif %}
-                'upsert' as _scd2_op,
-                _scd2_key
+                'upsert' as _scd2_op
             from changes_only
         )
         {%- if collapse_redundant_versions %}
@@ -253,8 +249,7 @@ using (
                 {%- if track_changed_columns %}
                 cast(null as object) as {{ changed_columns_col }},
                 {%- endif %}
-                'delete' as _scd2_op,
-                _scd2_key
+                'delete' as _scd2_op
             from previous_record
             where _scd2_key not in (select _scd2_key from changes_only)
         )
