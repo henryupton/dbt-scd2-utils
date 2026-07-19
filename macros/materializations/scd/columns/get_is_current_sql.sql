@@ -17,5 +17,8 @@
 #}
 
 {%- macro get_is_current_sql(unique_keys_csv, updated_at_col) -%}
-  row_number() over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }} desc) = 1
+  {# Ascending window (no later version exists) rather than `row_number() ... desc = 1`, so this #}
+  {# reuses the same partition/order as every other audit column and Snowflake does a single sort. #}
+  {# updated_at is unique per key after the _scd2_key dedup, so exactly one row has a null lead. #}
+  lead({{ updated_at_col }}) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) is null
 {%- endmacro -%}

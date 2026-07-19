@@ -131,3 +131,32 @@ seeds:
         data_type: varchar
       - name: _updated_at
         data_type: timestamp_tz
+
+  - name: null_key_raw_3
+    columns:
+      - name: customer_id
+        data_type: integer
+      - name: region
+        data_type: varchar
+      - name: status
+        data_type: varchar
+      - name: _updated_at
+        data_type: timestamp_tz
+
+  - name: null_key_expected_1
+    description: Expected full history of null_key_scd2 after the initial load (null_key_raw_1).
+    config: &null_key_expected_config
+      column_types:
+        customer_id: integer
+        region: varchar
+        status: varchar
+        _valid_from: timestamp_tz
+        _valid_to: timestamp_tz
+        _is_current: boolean
+        _change_type: varchar
+  - name: null_key_expected_2
+    description: Expected full history after loading null_key_raw_1 then null_key_raw_2.
+    config: *null_key_expected_config
+  - name: null_key_expected_3
+    description: Expected full history after loading null_key_raw_1, _2, then _3.
+    config: *null_key_expected_config

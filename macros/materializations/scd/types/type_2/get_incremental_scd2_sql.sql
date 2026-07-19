@@ -87,10 +87,7 @@ using (
             select
                 {{ dest_cols_csv }},
                 'new' as _source,
-                17 as _priority,
                 {{ dbt_utils.generate_surrogate_key(scd2_unique_key) }} as _scd2_key,
-                {# Business-key-only hash (no updated_at) for the previous_record match below. #}
-                {{ dbt_utils.generate_surrogate_key(unique_key) }} as _scd2_business_key,
                 {{ dbt_utils.generate_surrogate_key(scd_check_columns | list) }} as _scd2_hash,
             from {{ temp_relation }}
         )
@@ -101,7 +98,6 @@ using (
             select
                 {{ dbt_scd2_utils.get_quoted_csv(dest_cols_names, 'p.') }},
                 'previous' as _source,
-                0 as _priority,
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd2_unique_key, 'p.')) }} as _scd2_key,
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd_check_columns, 'p.')) }} as _scd2_hash,
             from {{ this }} as p
@@ -109,14 +105,17 @@ using (
                 select 1
                 from new_records as n
                 {#
-                  Match prior versions on a null-safe hash of unique_key, not column by column:
-                  `p.col = n.col` is UNKNOWN when a key column is NULL, so a null-bearing key's
-                  prior versions were never pulled in and its current row was never expired.
-                  generate_surrogate_key coalesces NULLs (no-op for non-null keys). n reuses its
-                  _scd2_business_key column; p is the raw target table, so it hashes inline.
+                  Match prior versions on the raw key columns with equal_null (null-safe equality):
+                  `p.col = n.col` is UNKNOWN when a key column is NULL, so a null-bearing key's prior
+                  versions were never pulled in and its current row was never expired. equal_null
+                  treats NULL = NULL as true (and NULL = value as false), so it is null-safe like the
+                  surrogate-key hash was, but references the raw target columns so Snowflake can prune
+                  micro-partitions of {{ this }} by the key instead of scanning the whole history.
                 #}
-                where {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(unique_key, 'p.')) }}
-                    = n._scd2_business_key
+                where
+                {%- for col in unique_key %}
+                    equal_null(p.{{ col }}, n.{{ col }}){{ " and" if not loop.last }}
+                {%- endfor %}
                 {# We want all previous records which could have been valid when any of the new records occurred. #}
                 {% if not update_all_previous_records %}
                 and n.{{ updated_at_col }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
@@ -133,7 +132,6 @@ using (
                 {{ col }},
                 {%- endfor %}
                 _source,
-                _priority,
                 _scd2_key,
                 _scd2_hash,
             from new_records
@@ -145,7 +143,6 @@ using (
                 {{ col }},
                 {%- endfor %}
                 _source,
-                _priority,
                 _scd2_key,
                 _scd2_hash,
             from previous_record
@@ -153,8 +150,9 @@ using (
         -- select * from all_records {{ unique_keys_csv }}, {{ updated_at_col }} limit 321;
         ,
 
-        {# Make sure we have only one record for each unique key, updated_at permutation. #}
-        {# Prioritise existing record over a new one in the case of a duplicate. Why would something have changed but not produced a new updated_at? #}
+        {# One row per (unique_key, updated_at) permutation. When the same permutation arrives from #}
+        {# both the new batch and the persisted history, an arbitrary survivor is kept (order by a #}
+        {# constant): a stable updated_at is assumed not to coincide with changed content. #}
         pick_a_key_any_key as (
             select
                 *
@@ -164,11 +162,16 @@ using (
         -- select * from pick_a_key_any_key order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
         ,
 
+        {# Only one of these hash windows is ever read: the collapse branch groups by _run_id, the #}
+        {# non-collapse branch compares _prev_hash. Emit just the one this run needs. #}
         compare_versions as (
             select
                 *,
-                lag(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _prev_hash,
+                {%- if collapse_redundant_versions %}
                 conditional_change_event(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _run_id
+                {%- else %}
+                lag(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _prev_hash
+                {%- endif %}
             from pick_a_key_any_key
         )
         -- select * from compare_versions order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
@@ -221,8 +224,7 @@ using (
                 {%- if track_changed_columns %}
                 {{ dbt_scd2_utils.get_changed_columns_sql(scd_check_columns, unique_keys_csv, updated_at_col) }} as {{ changed_columns_col }},
                 {%- endif %}
-                'upsert' as _scd2_op,
-                _scd2_key
+                'upsert' as _scd2_op
             from changes_only
         )
         {%- if collapse_redundant_versions %}
@@ -247,8 +249,7 @@ using (
                 {%- if track_changed_columns %}
                 cast(null as object) as {{ changed_columns_col }},
                 {%- endif %}
-                'delete' as _scd2_op,
-                _scd2_key
+                'delete' as _scd2_op
             from previous_record
             where _scd2_key not in (select _scd2_key from changes_only)
         )
@@ -262,13 +263,15 @@ using (
     ) AS DBT_INTERNAL_SOURCE
 on (
     {#
-      Same null-safe key match as previous_record above, on the full SCD2 key (incl. updated_at):
-      without it a null-bearing key fell through to `not matched` and re-inserted a current row
-      every run, piling up duplicates. SOURCE reuses the propagated _scd2_key; DEST is the raw
-      target table, which doesn't persist it, so it hashes inline.
+      Same null-safe equal_null match as previous_record above, on the full SCD2 key (incl.
+      updated_at): without null-safe matching a null-bearing key falls through to `not matched`
+      and re-inserts a current row every run, piling up duplicates. Matching the raw key columns
+      (rather than a hash of them) lets Snowflake prune DBT_INTERNAL_DEST by the key. SOURCE carries
+      the raw key columns through scd2_versions / redundant_versions, so both sides are available.
     #}
-    {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd2_unique_key, 'DBT_INTERNAL_DEST.')) }}
-        = DBT_INTERNAL_SOURCE._scd2_key
+    {%- for col in scd2_unique_key %}
+    equal_null(DBT_INTERNAL_DEST.{{ col }}, DBT_INTERNAL_SOURCE.{{ col }}){{ " and" if not loop.last }}
+    {%- endfor %}
     {%- if incremental_predicates -%}
     {# Optional: Incremental Predicates (if defined in dbt_project.yml or model config) #}
     and (
@@ -283,8 +286,16 @@ on (
 {# A matched record flagged for deletion is a version that collapsed out of the timeline. #}
 when matched and DBT_INTERNAL_SOURCE._scd2_op = 'delete' then delete
 {%- endif %}
-{# When a match is found, we update the existing record (this typically happens to set _is_current to false or _valid_to for old records) #}
-when matched {% if collapse_redundant_versions %}and DBT_INTERNAL_SOURCE._scd2_op = 'upsert' {% endif %}then update set
+{# When a match is found, we update the existing record (this typically happens to set _is_current to false or _valid_to for old records). #}
+{# Guard the update so it only fires when at least one tracked audit column actually differs: on an update-all-previous-records run #}
+{# previous_record pulls a key's whole history and re-merges it, but usually only the newly-current version and the one it expires #}
+{# change -- the rest are matched with identical values. Skipping those no-op updates avoids rewriting their micro-partitions. #}
+{# `is distinct from` is null-safe, so it correctly covers the nullable _previous / _changed object columns. #}
+when matched {% if collapse_redundant_versions %}and DBT_INTERNAL_SOURCE._scd2_op = 'upsert' {% endif %}and (
+    {%- for col in merge_update_cols %}
+    DBT_INTERNAL_DEST.{{ col }} is distinct from DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %} or{% endif %}
+    {%- endfor %}
+) then update set
     {% for col in merge_update_cols %}
         DBT_INTERNAL_DEST.{{ col }} = DBT_INTERNAL_SOURCE.{{ col }}{% if not loop.last %},{% endif %}
     {%- endfor %}
