@@ -164,7 +164,12 @@ vars:
     valid_from_column: "eff_start_date"
     valid_to_column: "eff_end_date"
     default_valid_to: "2999-12-31 23:59:59"
+    suppress_date_type_warning: false   # default
 ```
+
+| Var | Default | Behaviour |
+|-----|---------|-----------|
+| `suppress_date_type_warning` | `false` | The materialization warns when the `updated_at` column is a `DATE` rather than a `TIMESTAMP`, since date-grain change tracking can produce imprecise validity windows. Set to `true` to silence that warning when a `DATE` grain is intentional. Only the warning is suppressed; the DATE handling itself is unchanged. |
 
 ### Out-of-Order & Backfill Handling
 
