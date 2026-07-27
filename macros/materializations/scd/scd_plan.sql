@@ -264,10 +264,11 @@
   {%- endif -%}
 
   {# Validate updated_at column type #}
+  {%- set suppress_date_type_warning = dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'suppress_date_type_warning', default=false) -%}
   {%- for column in dest_columns -%}
     {%- if column.name | upper == updated_at_col | upper -%}
       {%- set column_type = column.data_type | upper -%}
-      {%- if 'DATE' in column_type and 'TIME' not in column_type -%}
+      {%- if 'DATE' in column_type and 'TIME' not in column_type and not suppress_date_type_warning -%}
         {%- set warning_message -%}
           Column '{{ updated_at_col }}' has type '{{ column_type }}' which is a DATE type.
           SCD2 logic works best with TIMESTAMP types for precise change tracking.
