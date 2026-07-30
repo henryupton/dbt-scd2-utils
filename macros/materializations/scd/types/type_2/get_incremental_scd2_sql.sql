@@ -53,6 +53,8 @@
     {%- set deleted_at_col = arg_dict.get('deleted_at_column') -%}
     {%- set update_all_previous_records = arg_dict['update_all_previous_records'] -%}
     {%- set collapse_redundant_versions = arg_dict.get('collapse_redundant_versions', true) -%}
+    {# true -> equal_null (null-safe, default), false -> plain = (prune/SOS-eligible). #}
+    {%- set key_match_null_safe = arg_dict.get('key_match_null_safe', true) -%}
     {%- set track_previous_version = arg_dict.get('track_previous_version', false) -%}
     {%- set previous_version_col = arg_dict.get('previous_version_column') -%}
     {%- set track_changed_columns = arg_dict.get('track_changed_columns', false) -%}
@@ -105,17 +107,15 @@ using (
                 select 1
                 from new_records as n
                 {#
-                  Match prior versions on the raw key columns with equal_null (null-safe equality):
-                  `p.col = n.col` is UNKNOWN when a key column is NULL, so a null-bearing key's prior
-                  versions were never pulled in and its current row was never expired. equal_null
-                  treats NULL = NULL as true (and NULL = value as false), so it is null-safe like the
-                  surrogate-key hash was, but references the raw target columns so Snowflake can prune
-                  micro-partitions of {{ this }} by the key instead of scanning the whole history.
+                  Match prior versions on the raw key columns so Snowflake can prune micro-partitions
+                  of {{ this }} by the key instead of scanning the whole history. Plain `=` (default,
+                  when the key is non-null) is also Search-Optimization-eligible; `equal_null` is
+                  substituted when the key may be NULL (NULL = NULL is UNKNOWN under plain equality, so
+                  a null-bearing key's prior versions would never be pulled in and its current row
+                  never expired). The MERGE `ON` below uses the SAME operator via get_key_match_sql.
                 #}
                 where
-                {%- for col in unique_key %}
-                    equal_null(p.{{ col }}, n.{{ col }}){{ " and" if not loop.last }}
-                {%- endfor %}
+                    {{ dbt_scd2_utils.get_key_match_sql(unique_key, 'p', 'n', key_match_null_safe) }}
                 {# We want all previous records which could have been valid when any of the new records occurred. #}
                 {% if not update_all_previous_records %}
                 and n.{{ updated_at_col }} <= p.{{ valid_to_col }} -- Only those that could be affected by the new record's updated_at.
@@ -263,15 +263,14 @@ using (
     ) AS DBT_INTERNAL_SOURCE
 on (
     {#
-      Same null-safe equal_null match as previous_record above, on the full SCD2 key (incl.
-      updated_at): without null-safe matching a null-bearing key falls through to `not matched`
-      and re-inserts a current row every run, piling up duplicates. Matching the raw key columns
-      (rather than a hash of them) lets Snowflake prune DBT_INTERNAL_DEST by the key. SOURCE carries
-      the raw key columns through scd2_versions / redundant_versions, so both sides are available.
+      Same key match as previous_record above (via get_key_match_sql, so they can never drift),
+      on the full SCD2 key incl. updated_at. Without null-safe matching a null-bearing key falls
+      through to `not matched` and re-inserts a current row every run, piling up duplicates; plain
+      `=` is used only when the key is known non-null, where it prunes DBT_INTERNAL_DEST and is
+      Search-Optimization-eligible. SOURCE carries the raw key columns through scd2_versions /
+      redundant_versions, so both sides are available.
     #}
-    {%- for col in scd2_unique_key %}
-    equal_null(DBT_INTERNAL_DEST.{{ col }}, DBT_INTERNAL_SOURCE.{{ col }}){{ " and" if not loop.last }}
-    {%- endfor %}
+    {{ dbt_scd2_utils.get_key_match_sql(scd2_unique_key, 'DBT_INTERNAL_DEST', 'DBT_INTERNAL_SOURCE', key_match_null_safe) }}
     {%- if incremental_predicates -%}
     {# Optional: Incremental Predicates (if defined in dbt_project.yml or model config) #}
     and (

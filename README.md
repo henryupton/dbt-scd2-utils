@@ -140,6 +140,9 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `track_checksum` | ❌ | `false` | Add a `_CHECKSUM` native-UUID content fingerprint of the business columns (all SCD types) |
 | `checksum_column` | ❌ | `_CHECKSUM` | Name of the checksum column |
 | `checksum_exclude` | ❌ | `[]` | Columns to omit from the `_checksum` fingerprint (e.g. volatile processing timestamps) |
+| `assume_keys_not_null` | ❌ | inferred | (SCD2) `true` matches keys with `=` (prune- and Search-Optimization-eligible); `false` uses null-safe `equal_null`. Unset infers from `not_null` constraints, else guards at runtime. See [Key Matching](#key-matching--search-optimization). |
+| `search_optimization` | ❌ | `false` | (SCD2) `true` adds Snowflake Search Optimization (`EQUALITY`) on the key columns. Enterprise Edition; see [Key Matching](#key-matching--search-optimization). |
+| `search_optimization_columns` | ❌ | `unique_key` | (SCD2) Columns to build `search_optimization` on, when enabled. |
 
 ### Audit Column Names
 
@@ -183,6 +186,47 @@ vars:
 |-----|---------|-----------|
 | `update_all_previous_records` | `true` | Re-evaluate every existing version of an affected key on each run, so out-of-order arrivals are slotted in correctly. Set to `false` only if data is guaranteed to arrive in chronological order — it is a performance optimisation that otherwise risks multiple `is_current` rows for a key. |
 | `collapse_redundant_versions` | `true` | When an out-of-order arrival has tracked columns identical to an existing version, that existing version collapses out of the timeline. With the default the now-redundant row is **deleted**, so an incremental run matches a full refresh. Set to `false` to **keep** the redundant version instead (no deletes; the existing row is still correctly re-expired). Only takes effect when `update_all_previous_records` is also `true`. |
+
+### Key Matching & Search Optimization
+
+The SCD2 incremental MERGE and its `previous_record` lookup match the target on the business
+key. By default keys are matched with plain `=`, which lets Snowflake prune the history table by
+key (and is eligible for the Search Optimization Service). A key column that can be `NULL` needs
+null-safe `equal_null` instead (`NULL = NULL` is UNKNOWN under `=`, which would leave a
+null-bearing key's prior version un-expired and duplicate its current row). The operator is
+resolved per model, cheapest first:
+
+1. **`assume_keys_not_null` config** (model `meta` or global `vars`): `true` forces `=`, `false`
+   forces `equal_null`.
+2. **Declared constraints**: if every `unique_key` column has a `not_null` constraint (schema.yml
+   / contract), `=` is used. Snowflake enforces `NOT NULL` (the only enforced constraint), so this
+   is a real guarantee.
+3. **Runtime guard** (default when neither is set): the incoming batch is checked for NULLs in the
+   key. If none, `=` is used. If any, the model **warns and falls back to `equal_null`** for that
+   run, so output is always correct. Set `assume_keys_not_null: false` to skip the check and the
+   warning when you know a key is nullable.
+
+Because `=` and `equal_null` are identical when there are no NULLs, this default is
+behaviour-preserving: clean-key models simply gain prune-friendly matching.
+
+**Search Optimization** (`search_optimization`, opt-in, **Enterprise Edition**) has the package
+run `ALTER TABLE ... ADD SEARCH OPTIMIZATION ON EQUALITY(...)` on the key columns after the table
+is (re)created. It is applied on the create / `--full-refresh` path and persists across
+incremental merges, so enabling it on an existing model takes effect on the next full refresh.
+Search Optimization only accelerates `=`/`IN` predicates, so it does nothing while a model falls
+back to `equal_null` (the package warns if you enable it on a nullable-key model). It carries
+ongoing storage and maintenance cost; verify the benefit to your merge with `EXPLAIN` before
+relying on it.
+
+```sql
+{{
+  config(
+    materialized='incremental_scd2',
+    unique_key=['customer_id'],
+    meta={'assume_keys_not_null': true, 'search_optimization': true}
+  )
+}}
+```
 
 ### Change Column Configuration
 
