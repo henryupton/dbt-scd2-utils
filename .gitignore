@@ -26,3 +26,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Claude Code: ignore local state/worktrees, but track shared skills
+.claude/*
+!.claude/skills/

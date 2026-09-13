@@ -3,6 +3,8 @@
 
   Resolves audit column configuration, builds the source temp relation, decides
   between an initial load and an incremental update, and returns the SQL to run.
+  On the initial-load / full-refresh path, dbt_scd2_utils.get_full_refresh_sql picks
+  truncate + insert (table metadata preserved) or create or replace.
 
   Both the generic `scd` materialization and the backwards-compatible
   `incremental_scd2` alias call this macro. dbt does not allow one materialization
@@ -185,7 +187,7 @@
       {%- else -%}
         {%- set initial_load_sql = dbt_scd2_utils.get_initial_load_scd1_sql(arg_dict) -%}
       {%- endif -%}
-      {%- set build_sql = get_create_table_as_sql(False, target_relation, initial_load_sql) -%}
+      {%- set build_sql = dbt_scd2_utils.get_full_refresh_sql(target_relation, existing_relation, dest_columns, audit_columns, initial_load_sql) -%}
     {%- else -%}
       {{ log("Performing incremental SCD" ~ scd_type ~ " update") }}
       {%- if scd_type == 0 -%}
@@ -279,10 +281,11 @@
   {%- endif -%}
 
   {# Validate updated_at column type #}
+  {%- set suppress_date_type_warning = dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'suppress_date_type_warning', default=false) -%}
   {%- for column in dest_columns -%}
     {%- if column.name | upper == updated_at_col | upper -%}
       {%- set column_type = column.data_type | upper -%}
-      {%- if 'DATE' in column_type and 'TIME' not in column_type -%}
+      {%- if 'DATE' in column_type and 'TIME' not in column_type and not suppress_date_type_warning -%}
         {%- set warning_message -%}
           Column '{{ updated_at_col }}' has type '{{ column_type }}' which is a DATE type.
           SCD2 logic works best with TIMESTAMP types for precise change tracking.
@@ -326,7 +329,7 @@
 
     {%- set initial_load_sql = dbt_scd2_utils.get_initial_load_scd2_sql(default_arg_dict) -%}
 
-    {%- set build_sql = get_create_table_as_sql(False, target_relation, initial_load_sql) -%}
+    {%- set build_sql = dbt_scd2_utils.get_full_refresh_sql(target_relation, existing_relation, dest_columns, audit_columns, initial_load_sql) -%}
 
   {%- else -%}
 

@@ -150,14 +150,22 @@ using (
         -- select * from all_records {{ unique_keys_csv }}, {{ updated_at_col }} limit 321;
         ,
 
-        {# One row per (unique_key, updated_at) permutation. When the same permutation arrives from #}
-        {# both the new batch and the persisted history, an arbitrary survivor is kept (order by a #}
-        {# constant): a stable updated_at is assumed not to coincide with changed content. #}
+        {# One row per (unique_key, updated_at) permutation. When the same permutation arrives from  #}
+        {# both the new batch and the persisted history, the EARLIEST-LOADED row survives, so a      #}
+        {# re-delivered row never displaces the persisted version or its loaded_at. Ties, and models #}
+        {# with no loaded_at watermark, keep the persisted row.                                      #}
         pick_a_key_any_key as (
             select
                 *
             from all_records
-            qualify row_number() over(partition by _scd2_key order by 1) = 1
+            qualify row_number() over(
+                partition by _scd2_key
+                order by
+                {%- if has_loaded_at %}
+                    {{ loaded_at_col }} asc,
+                {%- endif %}
+                    iff(_source = 'previous', 0, 1)
+            ) = 1
         )
         -- select * from pick_a_key_any_key order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
         ,
