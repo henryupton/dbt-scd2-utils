@@ -13,6 +13,7 @@ A dbt package providing custom materializations for Slowly Changing Dimension (S
 - **Snowflake Optimized**: Native MERGE statements and TIMESTAMP_TZ types
 - **Automatic Audit Columns**: `_IS_CURRENT`, `_VALID_FROM`, `_VALID_TO`, `_CHANGE_TYPE`
 - **Deletion Support**: Optional `deleted_at_column` for logical deletions and resurrections
+- **Metadata-Preserving Full Refresh**: `--full-refresh` truncates and reloads in place when the column set is unchanged, so grants, comments, tags, policies and clustering survive
 - **Temporal Joins**: `scd2_join` macro with composite key support
 - **Configurable**: Customize column names and behavior per model or globally
 - **Generic Tests**: Comprehensive SCD2 data quality tests included
@@ -140,6 +141,7 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `track_checksum` | ❌ | `false` | Add a `_CHECKSUM` native-UUID content fingerprint of the business columns (all SCD types) |
 | `checksum_column` | ❌ | `_CHECKSUM` | Name of the checksum column |
 | `checksum_exclude` | ❌ | `[]` | Columns to omit from the `_checksum` fingerprint (e.g. volatile processing timestamps) |
+| `full_refresh_strategy` | ❌ | `truncate` | How `--full-refresh` rebuilds an existing table: `truncate` keeps the table and swaps its rows when the schema is unchanged, `replace` always runs `create or replace table` (see [Full Refresh](#full-refresh)) |
 
 ### Audit Column Names
 
@@ -170,6 +172,38 @@ vars:
 | Var | Default | Behaviour |
 |-----|---------|-----------|
 | `suppress_date_type_warning` | `false` | The materialization warns when the `updated_at` column is a `DATE` rather than a `TIMESTAMP`, since date-grain change tracking can produce imprecise validity windows. Set to `true` to silence that warning when a `DATE` grain is intentional. Only the warning is suppressed; the DATE handling itself is unchanged. |
+
+### Full Refresh
+
+A `--full-refresh` (or a run where the table does not exist yet) rebuilds the whole table from
+the initial-load SQL. When the table already exists and its column set is unchanged, the
+package keeps the table object and swaps only its rows:
+
+```sql
+begin;
+truncate table analytics.dim_customers;
+insert into analytics.dim_customers (...) select ... from (...);
+commit;
+```
+
+Snowflake treats `TRUNCATE` as DML, so this is one transaction: if the insert fails the truncate
+rolls back and the old rows are still there. Because the table is never dropped, everything
+attached to it survives: grants, comments, tags, masking and row access policies, clustering
+keys and Search Optimization. `create or replace table` throws all of that away.
+
+The package falls back to `create or replace table` (the previous behaviour) when:
+
+- the relation does not exist yet, or exists as something other than a table (e.g. a view);
+- a business column was added, removed or changed type compared with the freshly built source
+  data. A `VARCHAR` that got narrower still fits and counts as unchanged; one that got wider
+  forces a replace;
+- an audit column is missing from the existing table (e.g. `track_checksum` was just enabled);
+- `full_refresh_strategy` is `replace`.
+
+The model's log line says which path was taken and, for a replace, why. Audit column types are
+checked by name only, since the package fixes them, so a package upgrade that changes an audit
+column's type needs a one-off `--full-refresh` with `full_refresh_strategy: replace` (model
+`meta`, or the `dbt_scd2_utils.full_refresh_strategy` var).
 
 ### Out-of-Order & Backfill Handling
 
