@@ -124,12 +124,15 @@ through dbt's built-in table materialization and so never honours native SOS han
 - **Target columns:** `search_optimization_columns`, defaulting to the `unique_key` columns
   (the merge join / lookup keys). `EQUALITY` method only.
 - **Statement:** `alter table <target> add search optimization on equality(<cols>)`.
-- **Lifecycle / idempotency:** SOS is a persistent table property. `create or replace` on a
-  full refresh drops it, so it is re-added on the create; on an incremental run it persists and
-  must not be re-added (re-adding an existing path errors). Resolved by gating on the
-  full-refresh / create path only (`so_columns` is threaded through the plan as `none` on
-  incremental runs), which needs no state lookup. Enabling SOS on an existing model therefore
-  takes effect on the next `--full-refresh`.
+- **Lifecycle / idempotency:** SOS is a persistent table property. `create or replace` drops
+  it; truncate + insert (the default full-refresh path since v1.0.51) and incremental merges keep
+  it. Re-adding an existing EQUALITY path is a silent no-op in Snowflake (verified 2026-09-14:
+  two identical `ADD`s leave one expression in `DESCRIBE SEARCH OPTIMIZATION`), so the ALTER is
+  re-asserted on every full-refresh path and skipped on incremental runs purely to avoid a
+  needless statement per run (`so_columns` is threaded through the plan as `none` there). No
+  state lookup needed. Enabling SOS on an existing model therefore takes effect on the next
+  `--full-refresh`; removing a column from `search_optimization_columns` does not drop its
+  path, since `ADD` is additive.
 - **Guard against a useless enable:** if `search_optimization` is on but the resolved key
   operator is `equal_null` (nullable keys), warn that SOS will not accelerate the merge while
   the match is null-safe.
@@ -188,7 +191,7 @@ All under `macros/materializations/scd/`.
   `not_null`; any undeclared column drops to the guard. The guard checks all key columns; a
   null in any one triggers fallback.
 - **Full refresh.** The initial load is a CTAS with no MERGE, so operator selection does not
-  apply there; SOS re-add does (the create dropped it).
+  apply there; SOS re-add does, on both the create and the truncate + insert path.
 - **Contract without enforcement.** A declared `not_null` constraint on a non-enforced
   contract is a modelling assertion, not a Snowflake guarantee. Treated as sufficient for `=`
   (consistent with trusting declared constraints); the guard is the safety net for anyone who

@@ -149,8 +149,10 @@
 
   {%- set should_full_refresh = (should_full_refresh() or existing_relation is none) -%}
 
-  {# Search Optimization is dropped by create-or-replace and persists across merges, so it is #}
-  {# only (re)applied on the create path. On incremental runs the path is already present. #}
+  {# Search Optimization survives truncate + insert and incremental merges; only create or replace #}
+  {# drops it. Re-adding an existing EQUALITY path is a no-op in Snowflake, so it is re-asserted on #}
+  {# every full-refresh path (whichever get_full_refresh_sql picks) with no state lookup, and skipped #}
+  {# on incremental runs where it is already present. #}
   {%- set apply_so_columns = so_columns if should_full_refresh else none -%}
 
   {# ------------------------------------------------------------------ #}

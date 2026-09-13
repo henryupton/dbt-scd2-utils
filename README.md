@@ -249,9 +249,13 @@ Because `=` and `equal_null` are identical when there are no NULLs, this default
 behaviour-preserving: clean-key models simply gain prune-friendly matching.
 
 **Search Optimization** (`search_optimization`, opt-in, **Enterprise Edition**) has the package
-run `ALTER TABLE ... ADD SEARCH OPTIMIZATION ON EQUALITY(...)` on the key columns after the table
-is (re)created. It is applied on the create / `--full-refresh` path and persists across
-incremental merges, so enabling it on an existing model takes effect on the next full refresh.
+run `ALTER TABLE ... ADD SEARCH OPTIMIZATION ON EQUALITY(...)` on the key columns after every
+`--full-refresh` / initial load. The path survives truncate + insert (see [Full Refresh](#full-refresh))
+and incremental merges, and re-adding an existing column is a no-op in Snowflake, so the ALTER is
+simply re-asserted on each full refresh; enabling it on an existing model takes effect on the
+next full refresh. `ADD` is additive, so dropping a column from `search_optimization_columns`
+does not remove its path: run one full refresh with `full_refresh_strategy: replace`, or
+`ALTER TABLE ... DROP SEARCH OPTIMIZATION` by hand.
 Search Optimization only accelerates `=`/`IN` predicates, so it does nothing while a model falls
 back to `equal_null` (the package warns if you enable it on a nullable-key model). It carries
 ongoing storage and maintenance cost; verify the benefit to your merge with `EXPLAIN` before
