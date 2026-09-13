@@ -14,5 +14,7 @@
 #}
 
 {%- macro is_array(obj) -%}
-  {{ obj is iterable and obj is not string and obj is not mapping }}
+  {# return() yields a real boolean; a bare {{ ... }} would render the string "True"/"False", #}
+  {# which is always truthy in an {% if %} and silently breaks every caller's condition. #}
+  {{ return(obj is iterable and obj is not string and obj is not mapping) }}
 {%- endmacro -%}
