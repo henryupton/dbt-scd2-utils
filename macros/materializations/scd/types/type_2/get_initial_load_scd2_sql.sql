@@ -35,7 +35,14 @@
     {% set dest_columns = arg_dict["dest_columns"] %}
     {% set scd_check_columns = arg_dict["scd_check_columns"] %}
     {% set audit_columns = arg_dict["audit_columns"] %}
-    
+
+    {# A re-extracted copy of a row shares its (key, updated_at) with the original. The EARLIEST-LOADED #}
+    {# copy survives, so the persisted version keeps the loaded_at it first arrived with and downstream #}
+    {# loaded_at cursors see nothing new on a source re-extract. Falls back to an arbitrary pick when    #}
+    {# the model emits no loaded_at watermark (loaded_at_column defaults to the audit load timestamp).  #}
+    {%- set loaded_at_col = arg_dict.get('loaded_at_column', '_loaded_at') -%}
+    {%- set has_loaded_at = (loaded_at_col | upper) in (dest_columns | map(attribute='name') | map('upper') | list) -%}
+
     {# Define our audit columns #}
     {%- set is_current_col = arg_dict.get('is_current_column') -%}
     {%- set valid_from_col = arg_dict.get('valid_from_column') -%}
@@ -64,13 +71,16 @@ with source_data as (
   from {{ temp_relation }}
 ),
 
-{# Make sure we have only one record for each unique key, updated_at permutation. #}
-{# Prioritise existing record over a new one in the case of a duplicate. Why would something have changed but not produced a new updated_at? #}
+{# One row per (unique_key, updated_at) permutation. Duplicates are re-extracted copies of the #}
+{# same row; the earliest-loaded one wins so the version keeps its original loaded_at.        #}
 pick_a_key_any_key as (
     select
         *
     from source_data
-    qualify row_number() over(partition by _scd2_key order by 1) = 1
+    qualify row_number() over(
+        partition by _scd2_key
+        order by {% if has_loaded_at %}{{ loaded_at_col }} asc{% else %}1{% endif %}
+    ) = 1
 )
 -- select * from pick_a_key_any_key order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
 ,
