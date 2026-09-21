@@ -1,0 +1,38 @@
+version: 2
+
+# column_types (not columns[].data_type) is what actually fixes the loaded column type:
+# the seed loader infers types from the CSV and, on dbt Fusion, overrides a mismatching
+# columns[].data_type declaration with the inferred one (dbt1058). The golden seeds are
+# compared to the model with EXCEPT, which needs matching TIMESTAMP_TZ types on both sides.
+seeds:
+  - name: redelivered_history_raw_1
+    config:
+      column_types:
+        customer_id: integer
+        customer_name: varchar
+        email: varchar
+        status: varchar
+        deleted_at: timestamp_tz
+        _created_at: timestamp_tz
+        _updated_at: timestamp_tz
+        _loaded_at: timestamp_tz
+
+  # Golden full-history snapshots for redelivered_history_scd2, one per iteration.
+  # Identical by design: iteration 2 is an incremental run over the same input and
+  # must not move a single row. default_valid_to carries no offset so it lands in
+  # the session timezone, exactly as the materialization's literal does.
+  - name: redelivered_history_expected_1
+    config:
+      column_types: &redelivered_history_expected_column_types
+        customer_id: integer
+        status: varchar
+        _updated_at: timestamp_tz
+        _loaded_at: timestamp_tz
+        _valid_from: timestamp_tz
+        _valid_to: timestamp_tz
+        _is_current: boolean
+        _change_type: varchar
+
+  - name: redelivered_history_expected_2
+    config:
+      column_types: *redelivered_history_expected_column_types

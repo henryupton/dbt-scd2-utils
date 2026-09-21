@@ -1,0 +1,11 @@
+customer_id,customer_name,email,status,deleted_at,_created_at,_updated_at,_loaded_at
+300,Bulk Reload,bulk@example.com,TRIAL,,2024-01-01 10:00:00+0000,2024-01-01 10:00:00+0000,2024-01-01 10:00:00+0000
+300,Bulk Reload,bulk@example.com,ACTIVE,,2024-01-01 10:00:00+0000,2024-03-10 10:00:00+0000,2024-03-10 10:00:00+0000
+300,Bulk Reload,bulk@example.com,ACTIVE,,2024-01-01 10:00:00+0000,2024-01-15 10:00:00+0000,2024-03-13 10:00:00+0000
+300,Bulk Reload,bulk@example.com,CANCELLED,,2024-01-01 10:00:00+0000,2024-04-01 10:00:00+0000,2024-04-01 10:00:00+0000
+301,Monotonic Control,mono@example.com,TRIAL,,2024-01-01 10:00:00+0000,2024-01-01 10:00:00+0000,2024-01-01 10:00:00+0000
+301,Monotonic Control,mono@example.com,ACTIVE,,2024-01-01 10:00:00+0000,2024-02-01 10:00:00+0000,2024-02-01 10:00:00+0000
+301,Monotonic Control,mono@example.com,ACTIVE,,2024-01-01 10:00:00+0000,2024-03-01 10:00:00+0000,2024-03-01 10:00:00+0000
+302,Redelivered Current,current@example.com,TRIAL,,2024-01-01 10:00:00+0000,2024-01-01 10:00:00+0000,2024-01-01 10:00:00+0000
+302,Redelivered Current,current@example.com,ACTIVE,,2024-01-01 10:00:00+0000,2024-03-10 10:00:00+0000,2024-03-10 10:00:00+0000
+302,Redelivered Current,current@example.com,ACTIVE,,2024-01-01 10:00:00+0000,2024-01-15 10:00:00+0000,2024-03-13 10:00:00+0000
