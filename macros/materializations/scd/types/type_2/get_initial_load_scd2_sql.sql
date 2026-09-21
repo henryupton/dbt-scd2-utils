@@ -16,6 +16,9 @@
       valid_to_column: Name of the valid_to timestamp column
       updated_at_column: Name of the updated_at timestamp column
       change_type_column: Name of the change_type column
+      loaded_at_column: Load watermark column (default _loaded_at); ranks survivors when present
+      collapse_redundant_versions: Keep one row per content run (default true), using the same
+        earliest-loaded survivor rule as the incremental merge
 
   Returns:
     SELECT SQL statement that includes original columns plus SCD audit columns
@@ -42,6 +45,11 @@
     {# the model emits no loaded_at watermark (loaded_at_column defaults to the audit load timestamp).  #}
     {%- set loaded_at_col = arg_dict.get('loaded_at_column', '_loaded_at') -%}
     {%- set has_loaded_at = (loaded_at_col | upper) in (dest_columns | map(attribute='name') | map('upper') | list) -%}
+
+    {# Same default and same rule as get_incremental_scd2_sql. The two paths MUST agree on which row #}
+    {# of a content run survives, or a full refresh and the incremental runs that follow it keep     #}
+    {# different versions of the same history.                                                       #}
+    {%- set collapse_redundant_versions = arg_dict.get('collapse_redundant_versions', true) -%}
 
     {# Define our audit columns #}
     {%- set is_current_col = arg_dict.get('is_current_column') -%}
@@ -85,20 +93,48 @@ pick_a_key_any_key as (
 -- select * from pick_a_key_any_key order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
 ,
 
+{# Only one of these hash windows is ever read: the collapse branch groups by _run_id, the #}
+{# non-collapse branch compares _prev_hash. Emit just the one this load needs.             #}
 compare_versions as (
     select
         *,
+        {%- if collapse_redundant_versions %}
+        conditional_change_event(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _run_id
+        {%- else %}
         lag(_scd2_hash) over(partition by {{ unique_keys_csv }} order by {{ updated_at_col }}) as _prev_hash
+        {%- endif %}
     from pick_a_key_any_key
 )
 -- select * from compare_versions order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
 ,
 
-{# This allows us to ignore changes in a certain subset of columns. #}
+{# Canonical timeline: one row per content run (a run = consecutive rows sharing _scd2_hash,   #}
+{# ordered by updated_at, so recurrence A -> B -> A stays three runs). When collapsing          #}
+{# redundant versions the survivor is the EARLIEST-LOADED row of the run, exactly as the merge  #}
+{# path keeps it: a bulk reload that re-delivers an earlier-dated copy of content that already  #}
+{# arrived in real time must not back-date the version, or its predecessor's valid_to, to a row #}
+{# that only landed later. For a monotonic source earliest-loaded is earliest-updated_at, so    #}
+{# this is a no-op there. Falls back to updated_at order when the model has no loaded_at        #}
+{# watermark. When NOT collapsing, keep the opener of every run; with no persisted rows on an   #}
+{# initial load that is the whole of the merge path's non-collapse rule.                        #}
 changes_only as (
+    {%- if collapse_redundant_versions %}
     select *
     from compare_versions
-    where (_prev_hash is null or _scd2_hash != _prev_hash) -- Only if the hash has changed (or is the first record for this key)
+    qualify row_number() over(
+        partition by {{ unique_keys_csv }}, _run_id
+        order by
+        {%- if has_loaded_at %}
+            {{ loaded_at_col }} asc,    -- earliest physical load wins, regardless of updated_at
+        {%- endif %}
+            {{ updated_at_col }} asc
+    ) = 1
+    {%- else %}
+    select *
+    from compare_versions
+    where _prev_hash is null
+       or _scd2_hash != _prev_hash -- the hash changed (or this is the first record for the key)
+    {%- endif %}
 )
 -- select * from changes_only order by {{ unique_keys_csv }}, {{ updated_at_col }} limit 123;
 

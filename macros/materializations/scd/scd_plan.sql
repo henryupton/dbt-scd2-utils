@@ -228,6 +228,8 @@
   {# timeline so incremental runs stay consistent with a full refresh. This needs the #}
   {# full prior history, so it is only applied when update_all_previous_records is true; #}
   {# otherwise it safely falls back to retaining (and re-expiring) the existing versions. #}
+  {# The resolved value is handed to BOTH the initial-load and the incremental SQL, so the #}
+  {# two paths apply the same run-collapse rule and keep the same survivor. #}
   {%- set collapse_redundant_versions = dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'collapse_redundant_versions', default=true) -%}
   {%- if collapse_redundant_versions and not update_all_previous_records -%}
     {{ exceptions.warn("dbt_scd2_utils: collapse_redundant_versions requires update_all_previous_records=true to be safe; redundant versions will be retained for " ~ this ~ ".") }}
@@ -321,7 +323,8 @@
       'changed_columns_column': changed_columns_col,
       'track_checksum': track_checksum,
       'checksum_column': checksum_col,
-      'checksum_columns': checksum_columns
+      'checksum_columns': checksum_columns,
+      'collapse_redundant_versions': collapse_redundant_versions
   }  %}
 
   {%- if should_full_refresh -%}
@@ -377,7 +380,6 @@
       'merge_update_cols': merge_update_cols,
       'incremental_predicates': config.get('incremental_predicates', []),
       'update_all_previous_records': update_all_previous_records,
-      'collapse_redundant_versions': collapse_redundant_versions,
       'key_match_null_safe': key_match_null_safe,
     }) -%}
 
