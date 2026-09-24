@@ -36,6 +36,10 @@ loaded-at column, and a table kept at retention 0. Each parent has a child built
   the `fp_iteration` var.
 - **`fp_child_late`** - disabled unless `fp_enable_late_child` is set, so it can appear mid-sequence.
 
+The guard also refuses to skip a node whose own source checksum differs from its last fingerprinted
+build. Fixture SQL is steered by vars, not edits, so the checksums never move between scenarios and
+the expected verdicts hold from the first run on a fresh schema.
+
 The source rows come from `fp_customer_rows()` (`macros/fp_fixture_sql.sql`), steered by vars:
 `fp_source` picks a seed, `fp_upper_email` / `fp_null_email_customer` change values below the
 watermark, `fp_extra_column` / `fp_drop_column` change the shape, `fp_duplicate_rows`,

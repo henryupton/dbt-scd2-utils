@@ -1,12 +1,12 @@
 {#
   Content fingerprint: on-run-start registration.
 
-  Creates the ledger if missing, then writes one `pending` row per selected model, seed or
-  snapshot with the deploy id, its parents, its current column shape and `snapshot_at`,
-  Snowflake's clock at run start. The post-hook (fingerprint_post) reads the pre-build table
-  through Time Travel at that anchor, so it is deliberately the database clock and not dbt's
-  run_started_at. A node already registered for this deploy id (an earlier step of the same
-  deploy) is left alone.
+  Creates the ledger if missing, then appends one `pending` row per selected model, seed or
+  snapshot with the deploy id, its parents, its current column shape, its source checksum and
+  `snapshot_at`, Snowflake's clock at run start. The post-hook (fingerprint_post) reads the
+  pre-build table through Time Travel at that anchor, so it is deliberately the database clock
+  and not dbt's run_started_at. A node already registered for this deploy id (an earlier step of
+  the same deploy) is left alone.
 
     on-run-start:
       - "{{ dbt_scd2_utils.fingerprint_register() }}"
@@ -66,9 +66,9 @@
         {%- do shapes.update({group_key ~ '.' ~ t: shape}) -%}
       {%- endfor -%}
     {%- else -%}
-      {# A node built for the first time has no relation yet; its pre_shape stays null and the post-hook reads new. #}
       {%- do log("fingerprint: show columns in " ~ g.database ~ "." ~ g.schema ~ " returned exactly 10,000 rows; capturing shapes per table", info=true) -%}
       {%- for t in g.tables | unique -%}
+        {# A node built for the first time has no relation yet; its pre_shape stays null and the post-hook reads new. #}
         {%- if adapter.get_relation(database=g.database, schema=g.schema, identifier=t) is not none -%}
           {%- set one = run_query("show columns in table " ~ g.database ~ "." ~ g.schema ~ "." ~ t) -%}
           {%- for tt, shape in dbt_scd2_utils.fingerprint_shape_from_show(one).items() -%}
@@ -99,14 +99,15 @@
         ~ ", " ~ dbt_scd2_utils.fingerprint_lit(dbt_scd2_utils.fingerprint_loaded_at_column(n)) ~ " as loaded_at_column"
         ~ ", 'pending' as verdict, null as detail, current_timestamp() as registered_at"
         ~ ", " ~ dbt_scd2_utils.fingerprint_lit(shapes.get(item.group_key ~ '.' ~ (item.alias | upper))) ~ " as pre_shape"
+        ~ ", " ~ dbt_scd2_utils.fingerprint_lit(dbt_scd2_utils.fingerprint_node_checksum(n)) ~ " as checksum"
     ) -%}
   {%- endfor -%}
 
   {%- do run_query(
       "insert into " ~ node_rel
-      ~ " (deploy_id, node_id, node_name, relation_name, parents, snapshot_at, loaded_at_column, verdict, detail, registered_at, pre_shape)"
+      ~ " (deploy_id, node_id, node_name, relation_name, parents, snapshot_at, loaded_at_column, verdict, detail, registered_at, pre_shape, checksum)"
       ~ " with r as (" ~ (rows | join(' union all ')) ~ ")"
-      ~ " select r.deploy_id, r.node_id, r.node_name, r.relation_name, r.parents, r.snapshot_at, r.loaded_at_column, r.verdict, r.detail, r.registered_at, r.pre_shape"
+      ~ " select r.deploy_id, r.node_id, r.node_name, r.relation_name, r.parents, r.snapshot_at, r.loaded_at_column, r.verdict, r.detail, r.registered_at, r.pre_shape, r.checksum"
       ~ " from r where not exists (select 1 from " ~ node_rel ~ " n where n.deploy_id = r.deploy_id and n.node_id = r.node_id)"
   ) -%}
   {%- do log("fingerprint: registered " ~ (rows | length) ~ " node(s) for deploy " ~ deploy_id ~ " at " ~ snapshot_at, info=true) -%}

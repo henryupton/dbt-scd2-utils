@@ -28,6 +28,7 @@
 -- depends_on: {{ ref('fp_child_late') }}
 {% endif %}
 
+{# The ledger is append-only: one pending row per node, then the verdict row. Latest wins. #}
 select
     node_name,
     verdict,
@@ -43,8 +44,10 @@ select
     buckets_changed,
     pre_shape,
     post_shape,
+    checksum,
     snapshot_at,
     finished_at
 from {{ dbt_scd2_utils.fingerprint_relation('deploy_node') }}
 where deploy_id = '{{ var("deploy_id", invocation_id) }}'
   and node_id <> '{{ model.unique_id }}'
+{{ dbt_scd2_utils.fingerprint_latest_row() }}

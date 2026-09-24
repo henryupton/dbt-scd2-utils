@@ -14,7 +14,7 @@ a change made before the build's snapshot belongs to no deploy and is correctly 
 
 Usage:
     ./test_fingerprint_sequence.py [--profile default] [--target dev] [--dbt /path/to/dbt]
-                                   [--only 1,2,3] [--from 15] [--show]
+                                   [--only 1,2,3] [--from 15] [--show] [--no-seed]
 """
 
 from __future__ import annotations
@@ -138,14 +138,6 @@ def main() -> int:
         sid = sc["id"]
         deploy_id = f"fp_{run_tag}_{sid}"
         print(f"\n[fingerprint] ===== {sid}: {sc['desc']} =====", flush=True)
-
-        if sc.get("preop"):
-            op = sc["preop"]
-            rc = run([args.dbt, "run-operation", op["macro"], "--args", json.dumps(op["args"]), *common]).returncode
-            if rc != 0:
-                print(f"[fingerprint] FAIL {sid}: pre-operation")
-                results.append((sid, sc["desc"], False))
-                continue
 
         steps = sc.get("steps") or [dict(select=sc["select"], flags=sc.get("flags", []), vars=sc.get("vars", {}))]
         ok = True
