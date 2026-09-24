@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: fp_ledger
+    description: >
+      This deploy's fingerprint verdicts, one row per fixture. Compared against
+      fp_expected_<iteration> by the sequence test.
+    tests:
+      - matches_expected_seed:
+          arguments:
+            seed_prefix: fp_expected
+            compare_columns: [node_name, verdict]
+            iteration_var: fp_iteration

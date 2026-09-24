@@ -1,16 +1,16 @@
 {#
   Asserts that a model's rows (projected to compare_columns) exactly match an
   expected seed, as a symmetric set difference. The expected seed is chosen by the
-  current `iteration` var: <seed_prefix>_<iteration>. This lets the same test cover
+  current `iteration` var (or the var named by iteration_var): <seed_prefix>_<iteration>. This lets the same test cover
   the initial load (iteration 1) and successive incremental loads (iteration 2..n)
   when driven by test_scd2_sequence.sh.
 
   Fails if the model has any row the seed doesn't, or vice versa.
 #}
 
-{% test matches_expected_seed(model, seed_prefix, compare_columns) %}
+{% test matches_expected_seed(model, seed_prefix, compare_columns, iteration_var='iteration') %}
 
-  {%- set iteration = var('iteration', 1) -%}
+  {%- set iteration = var(iteration_var, 1) -%}
   {%- set expected = ref(seed_prefix ~ '_' ~ iteration) -%}
   {%- set cols_csv = dbt_scd2_utils.get_quoted_csv(compare_columns) -%}
 

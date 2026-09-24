@@ -30,10 +30,20 @@ flags:
 seeds:
   dbt_scd2_utils_integration_tests:
     +quote_columns: false
+    +post-hook:
+      - "alter table {{ this }} set data_retention_time_in_days = 1"
+      - "{{ dbt_scd2_utils.fingerprint_post(this) }}"
 
 models:
   dbt_scd2_utils_integration_tests:
     +materialized: table
+    fingerprint:
+      +post-hook:
+        - "alter table {{ this }} set data_retention_time_in_days = 1"
+        - "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+    fingerprint_unprotected:
+      +post-hook:
+        - "{{ dbt_scd2_utils.fingerprint_post(this) }}"
 
 tests:
   dbt_scd2_utils_integration_tests:
@@ -49,3 +59,6 @@ vars:
     change_type_column: _change_type
     created_at_column: _created_at
   default_valid_to: "2999-12-31 23:59:59"
+
+on-run-start:
+  - "{{ dbt_scd2_utils.fingerprint_register() }}"

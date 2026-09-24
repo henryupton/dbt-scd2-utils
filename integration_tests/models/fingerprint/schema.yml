@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: fp_dim_scd2
+    description: SCD type 2 fixture. Merge on incremental runs, truncate + insert on full refresh.
+  - name: fp_dim_scd1
+    description: SCD type 1 fixture. In-place overwrite of a changed key moves rows below the watermark.
+  - name: fp_evt_merge
+    description: dbt incremental merge on an event id. Unguarded update rewrites matched rows with equal values.
+  - name: fp_stg_append
+    description: dbt incremental append above a watermark with full_refresh false, the protected staging shape.
+  - name: fp_table_replace
+    description: dbt table. create or replace on every build, so always new.
+  - name: fp_child_guarded
+    description: Child of fp_dim_scd2 built by the test-only guarded_table materialization, which skips when the parent verdict allows.
+  - name: fp_fct_overwrite
+    description: Test-only insert-overwrite fact, the shape the project's truncate_insert uses.
+  - name: fp_child_of_overwrite
+    description: Guarded child of fp_fct_overwrite.
+  - name: fp_evt_evolve
+    description: Incremental merge with on_schema_change append_new_columns; a new column arrives by ALTER, not replace.
+  - name: fp_child_of_evolve
+    description: Guarded child of fp_evt_evolve.
+  - name: fp_evt_sync
+    description: Incremental merge with on_schema_change sync_all_columns; dropped columns leave by ALTER.
+  - name: fp_child_of_sync
+    description: Guarded child of fp_evt_sync.
+  - name: fp_parent_no_loaded_at
+    description: Merge-built table without a loaded-at column; must read unhashable.
+  - name: fp_child_of_unhashable
+    description: Guarded child of an unhashable parent; must always build.
+  - name: fp_child_of_view
+    description: Guarded child of a view; must always build.
+  - name: fp_child_of_seed
+    description: Guarded child of a seed; must build whether the seed is selected (new) or not (unregistered).
+  - name: fp_child_of_no_tt
+    description: Guarded child of a table with no Time Travel; parent reads error, child must build.
+  - name: fp_child_late
+    description: Enabled mid-sequence and aliased per run so no table exists yet; must build regardless of parent verdicts.

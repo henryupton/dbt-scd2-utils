@@ -23,6 +23,24 @@ Tests for the generic `scd` materialization (types 0 and 1):
 
 Behavioural expectations live in `seeds/scd_materialization/` as `customers_scd{0,1}_expected_{iteration}.csv`; the `matches_expected_seed` test compares the model to the seed for the current `iteration`.
 
+#### `models/fingerprint/`, `models/fingerprint_unprotected/`, `models/fingerprint_ledger/`
+Fixtures for the content fingerprint macros (`macros/fingerprint/` in the package). Every
+materialization shape the fingerprint has to read is here: the package `scd` types 1 and 2, dbt
+`incremental` merge and append, dbt `table`, a test-only `overwrite_table` (insert overwrite, the
+project's truncate_insert shape), merges with `on_schema_change` set, a view, a table without a
+loaded-at column, and a table kept at retention 0. Each parent has a child built by the test-only
+`guarded_table` materialization, which asks `fingerprint_should_skip()` first.
+
+- **`fp_ledger`** - view over this deploy's rows in the `fingerprint_deploy_node` ledger; the
+  `matches_expected_seed` test compares it to `seeds/fingerprint/fp_expected_<n>.csv`, keyed by
+  the `fp_iteration` var.
+- **`fp_child_late`** - disabled unless `fp_enable_late_child` is set, so it can appear mid-sequence.
+
+The source rows come from `fp_customer_rows()` (`macros/fp_fixture_sql.sql`), steered by vars:
+`fp_source` picks a seed, `fp_upper_email` / `fp_null_email_customer` change values below the
+watermark, `fp_extra_column` / `fp_drop_column` change the shape, `fp_duplicate_rows`,
+`fp_bump_loaded_at` and `fp_shuffle` exercise the hash.
+
 #### `models/source_macro/`
 Tests for the enhanced `source()` macro functionality:
 - **`test_source_macro_basic.sql`** - Basic source macro usage (no loaded_at parameter)
@@ -92,6 +110,23 @@ dbt build --select +models/scd_materialization/
 # Negative test: deleted_at_column on a type 0/1 model must raise a compiler error.
 ./test_scd_negative.sh
 ```
+
+#### Content Fingerprint
+```bash
+# Thirty-two ordered, stateful scenarios; each builds a selection with fingerprint: true and
+# asserts every fixture's verdict (new / unchanged / appended / modified / unhashable / error /
+# skipped) against fp_expected_<n>. Weighted towards false negatives: genuine changes that must
+# not be waved through, and guarded children that must build.
+./test_fingerprint_sequence.py --profile default --target dev
+
+# A slice, with the ledger dumped after each scenario
+./test_fingerprint_sequence.py --only 9,10,12 --show
+
+# Scenario 12 deletes fixture rows inside the build with a pre-hook (fp_delete_customer var).
+```
+
+Fixture tables and seeds get `data_retention_time_in_days = 1` from a post-hook, because the
+fingerprint reads the pre-build table through Time Travel and dev databases here have retention 0.
 
 #### Source Macro Tests
 ```bash
