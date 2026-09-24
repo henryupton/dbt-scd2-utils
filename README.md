@@ -15,6 +15,7 @@ A dbt package providing custom materializations for Slowly Changing Dimension (S
 - **Deletion Support**: Optional `deleted_at_column` for logical deletions and resurrections
 - **Metadata-Preserving Full Refresh**: `--full-refresh` truncates and reloads in place when the column set is unchanged, so grants, comments, tags, policies and clustering survive
 - **Temporal Joins**: `scd2_join` macro with composite key support
+- **Content Fingerprint**: hooks that record whether a build changed a table's content, and a guard a materialization can ask before rebuilding a child of `unchanged` parents
 - **Configurable**: Customize column names and behavior per model or globally
 - **Generic Tests**: Comprehensive SCD2 data quality tests included
 
@@ -546,6 +547,59 @@ Join multiple SCD2 tables across time with composite key support:
 ```
 
 The macro creates a temporal spine and joins all tables' active versions for each time period.
+
+## Content Fingerprint
+
+Tools for answering "did this build change the table's content?" so a deploy can skip descendants whose upstream came out identical. They are general macros under `macros/fingerprint/`; nothing in the `scd` materializations calls them, and a project opts in with two hooks and a var.
+
+```yaml
+# dbt_project.yml
+on-run-start:
+  - "{{ dbt_scd2_utils.fingerprint_register() }}"
+
+models:
+  +post-hook: "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+```
+
+```bash
+dbt build --vars '{"fingerprint": true, "deploy_id": "deploy-123"}'
+```
+
+`fingerprint_register()` writes one `pending` row per selected model, seed and snapshot into a ledger table (`fingerprint_deploy_node`), stamped with Snowflake's clock as `snapshot_at`, the node's parents and its column shape. `fingerprint_post(this)` then compares the table as built with the table `at(timestamp => snapshot_at)` and records a verdict:
+
+| Verdict | Meaning | Blocks a child's skip |
+|---------|---------|-----------------------|
+| `new` | Object created or replaced after the snapshot, or a view | yes |
+| `unchanged` | Nothing written and the row count is equal, or every hashed month is equal | no |
+| `appended` | Every row the build wrote sits above the pre-build watermark (`max(_loaded_at)`) | no |
+| `modified` | A column was added, removed or retyped, or a month at or below the watermark counts or hashes differently | yes |
+| `unhashable` | No loaded-at column on one side | yes |
+| `error` | Relation missing, or no Time Travel (retention 0) | yes |
+| `skipped` | The guard skipped the build | no |
+
+The comparison is cheap until it has to hash. Object state comes from `show tables like`, shape from `show columns`, and the counts are filtered scalar subqueries on `METADATA$ROW_LAST_COMMIT_TIME` and the watermark, which prune to the partitions the build wrote. Only then are the touched `_loaded_at` months hashed with `hash_agg` on both sides (every month when every row was rewritten), and per-month row counts catch a deletion in a month the build never touched. Per-month detail lands in `fingerprint_deploy_segment`.
+
+`fingerprint_should_skip()` is for a materialization to call before building. It returns true only when `fingerprint_skip_unchanged_upstream` is on, at least one parent is registered in this deploy, and no registered parent is `pending`, `new`, `modified`, `unhashable` or `error`. A node with no registered parents always builds. `fingerprint_mark_skipped()` records the skip so the node's own children can read it. `integration_tests/macros/guarded_table.sql` shows the shape:
+
+```jinja
+{% if existing_relation is not none and dbt_scd2_utils.fingerprint_should_skip() %}
+  {% do dbt_scd2_utils.fingerprint_mark_skipped(detail='no blocking parent verdict') %}
+  {% call statement('main') %}select 'skipped' as outcome{% endcall %}
+  {{ return({'relations': [existing_relation]}) }}
+{% endif %}
+```
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `fingerprint` | `false` | Master switch; every macro is a no-op without it |
+| `fingerprint_skip_unchanged_upstream` | `false` | Lets `fingerprint_should_skip()` return true |
+| `deploy_id` | `invocation_id` | Shared by the steps of one deploy; registration is idempotent per deploy id |
+| `fingerprint_schema` | `target.schema` | Schema holding the two ledger tables |
+| `fingerprint_loaded_at_column` | `_loaded_at` | Watermark and month-bucket column; per model via `meta.fingerprint_loaded_at` |
+| `fingerprint_exclude` | `_batched_at`, `_written_at`, `_synthesised_at` | Columns left out of the hash, plus the package's `is_current_column` and `valid_to_column`; per model via `meta.fingerprint_exclude` |
+| `fingerprint_select_tag` | none | Fallback selection for runtimes without `selected_resources` |
+
+Requirements: Snowflake with Time Travel on the fingerprinted tables (transient tables cap at one day, which is enough for a deploy) and row commit timestamps (`ROW_TIMESTAMP_DEFAULT` or per-table `ROW_TIMESTAMP`). A build has to keep the object for the snapshot to survive: truncate + insert, `insert overwrite`, `merge` and `insert` all do; `create or replace` reads `new`, which is the right verdict for a first build or a column-set change.
 
 ## Generic Tests
 
