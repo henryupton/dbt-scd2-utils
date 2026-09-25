@@ -36,9 +36,24 @@ loaded-at column, and a table kept at retention 0. Each parent has a child built
   the `fp_iteration` var.
 - **`fp_child_late`** - disabled unless `fp_enable_late_child` is set, so it can appear mid-sequence.
 
+The `fp_edp` group (scenarios 33 to 38) holds the project's own shapes:
+
+- **`fp_dim_versioned`** - a versioned `scd` dim built as `fp_dim_versioned_v1`; `fp_child_of_versioned`
+  refs the bare name, so its `depends_on` carries the versioned unique_id and the latest-version pointer
+  view Fusion may create is never fingerprinted.
+- **`fp_stg_batch`** - a staging merge whose `_loaded_at` is a batch stamp, steered by `fp_batch_stage`:
+  empty at snapshot, then two batches, then a late chunk of the current batch landing exactly at the
+  watermark (must read `modified`), then a new batch.
+- **`fp_registry`** - a registry seed with no loaded-at column, the shape of the real ones. It reads
+  `unhashable` whether or not its content changed, so `fp_child_of_registry` always builds. Scenario 37
+  pins that.
+- **`fp_seed_live`** - a seed with `_loaded_at` whose CSV the runner rewrites in scenario 37 so a reload
+  carries changed content and reads `modified`. The runner restores the committed CSVs when it exits.
+
 The guard also refuses to skip a node whose own source checksum differs from its last fingerprinted
-build. Fixture SQL is steered by vars, not edits, so the checksums never move between scenarios and
-the expected verdicts hold from the first run on a fresh schema.
+build. Fixture model SQL is steered by vars, not edits (the runner rewrites two seed CSVs, never a
+model), so guarded checksums never move between scenarios and the expected verdicts hold from the
+first run on a fresh schema.
 
 The source rows come from `fp_customer_rows()` (`macros/fp_fixture_sql.sql`), steered by vars:
 `fp_source` picks a seed, `fp_upper_email` / `fp_null_email_customer` change values below the
@@ -117,7 +132,7 @@ dbt build --select +models/scd_materialization/
 
 #### Content Fingerprint
 ```bash
-# Thirty-two ordered, stateful scenarios; each builds a selection with fingerprint: true and
+# Thirty-eight ordered, stateful scenarios; each builds a selection with fingerprint: true and
 # asserts every fixture's verdict (new / unchanged / appended / modified / unhashable / error /
 # skipped) against fp_expected_<n>. Weighted towards false negatives: genuine changes that must
 # not be waved through, and guarded children that must build.

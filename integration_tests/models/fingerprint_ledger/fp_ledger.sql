@@ -1,7 +1,7 @@
 {{
     config(
         materialized='view',
-        tags=['fingerprint', 'fp_overwrite', 'fp_evolve', 'fp_guard', 'fp_late']
+        tags=['fingerprint', 'fp_overwrite', 'fp_evolve', 'fp_guard', 'fp_late', 'fp_edp']
     )
 }}
 
@@ -24,6 +24,12 @@
 -- depends_on: {{ ref('fp_child_of_seed') }}
 -- depends_on: {{ ref('fp_no_tt') }}
 -- depends_on: {{ ref('fp_child_of_no_tt') }}
+-- depends_on: {{ ref('fp_dim_versioned') }}
+-- depends_on: {{ ref('fp_child_of_versioned') }}
+-- depends_on: {{ ref('fp_stg_batch') }}
+-- depends_on: {{ ref('fp_child_of_batch') }}
+-- depends_on: {{ ref('fp_child_of_registry') }}
+-- depends_on: {{ ref('fp_child_of_seed_live') }}
 {% if var('fp_enable_late_child', false) %}
 -- depends_on: {{ ref('fp_child_late') }}
 {% endif %}

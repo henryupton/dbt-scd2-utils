@@ -37,3 +37,18 @@ models:
     description: Guarded child of a table with no Time Travel; parent reads error, child must build.
   - name: fp_child_late
     description: Enabled mid-sequence and aliased per run so no table exists yet; must build regardless of parent verdicts.
+  - name: fp_dim_versioned
+    description: Versioned SCD type 2 dim, the warehouse shape. Built as fp_dim_versioned_v1; the child refs the unversioned name.
+    latest_version: 1
+    versions:
+      - v: 1
+  - name: fp_child_of_versioned
+    description: Guarded child of the versioned dim, ref'd by its unversioned name; skips when the dim is unchanged, builds when it is modified.
+  - name: fp_stg_batch
+    description: Staging merge with a batch-stamped _loaded_at. Empty at first, then batches; a late chunk of the current batch lands exactly at the watermark and must read modified.
+  - name: fp_child_of_batch
+    description: Guarded child of fp_stg_batch.
+  - name: fp_child_of_registry
+    description: Guarded child of a registry seed with no loaded-at column; the parent reads unhashable whatever its content, so this always builds.
+  - name: fp_child_of_seed_live
+    description: Guarded child of a seed whose content the runner rewrites mid-sequence; skips on an identical reload, builds on a changed one.

@@ -11,6 +11,9 @@ The suite is weighted towards false negatives: every way a genuine change could 
 through as unchanged or appended, and every way a guarded child could be skipped when it must
 build. Scenario 12 deletes fixture rows inside the build with a pre-hook (fp_delete_customer);
 a change made before the build's snapshot belongs to no deploy and is correctly invisible.
+Scenarios 33 to 38 are the project's own shapes: a versioned dim, a batch-stamped staging merge
+that starts empty, a registry seed with no loaded-at column, and a seed whose CSV the runner
+rewrites mid-sequence (FILE_VARIANTS); the originals are restored when the runner exits.
 
 Usage:
     ./test_fingerprint_sequence.py [--profile default] [--target dev] [--dbt /path/to/dbt]
@@ -20,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import atexit
 import datetime as dt
 import json
 import subprocess
@@ -30,6 +34,36 @@ CORE = "tag:fingerprint"
 OVER = "tag:fp_overwrite"
 EVOLVE = "tag:fp_evolve"
 GUARD = "tag:fp_guard"
+EDP = "tag:fp_edp"
+
+# Seeds the runner rewrites mid-sequence so a reload carries changed content. A variant stays in
+# place for the scenarios that follow; the committed originals are restored when the runner exits.
+SEED_LIVE = "seeds/fingerprint/fp_seed_live.csv"
+REGISTRY = "seeds/fingerprint/fp_registry.csv"
+FILE_VARIANTS = {
+    SEED_LIVE: {
+        # customer 3 flips INACTIVE -> ACTIVE with the same timestamps
+        "changed": (
+            "customer_id,customer_name,email,status,_updated_at,_loaded_at\n"
+            "2,Grace Hopper,grace@example.com,ACTIVE,2026-06-15 09:00:00+0000,2026-06-15 09:05:00+0000\n"
+            "3,Alan Turing,alan@example.com,ACTIVE,2026-06-16 09:00:00+0000,2026-06-16 09:05:00+0000\n"
+            "5,Margaret Hamilton,margaret@example.com,ACTIVE,2026-07-11 09:00:00+0000,2026-07-11 09:05:00+0000\n"
+            "6,Barbara Liskov,barbara@example.com,ACTIVE,2026-08-05 09:00:00+0000,2026-08-05 09:05:00+0000\n"
+            "7,Frances Allen,frances@example.com,ACTIVE,2026-08-06 09:00:00+0000,2026-08-06 09:05:00+0000\n"
+            "2,Grace Hopper,grace@example.com,INACTIVE,2026-08-20 09:00:00+0000,2026-08-20 09:05:00+0000\n"
+            "8,Radia Perlman,radia@example.com,ACTIVE,2026-06-20 09:00:00+0000,2026-06-20 09:05:00+0000\n"
+        ),
+    },
+    REGISTRY: {
+        # one label changes; with no loaded-at column the fingerprint cannot see it
+        "changed": (
+            "event_type,label,is_active\n"
+            "gen_impression,Generation impression (AI),true\n"
+            "item_download,Item download,true\n"
+            "subscription_started,Subscription started,true\n"
+        ),
+    },
+}
 
 # Fixture state after scenario 14, reused by the later groups so they start from a known shape.
 STEADY = {"fp_source": "deleted_b", "fp_upper_email": True, "fp_extra_column": True, "fp_null_email_customer": 3}
@@ -97,6 +131,18 @@ SCENARIOS = [
     # --- seed replaced -------------------------------------------------------------------------------
     dict(id=32, desc="guard: seed selected with --full-refresh, create or replace (child builds)",
          select=f"{GUARD} fp_raw_deleted_b", flags=["--full-refresh"], vars=STEADY),
+    # --- the project's own shapes: versioned dim, batch-stamped staging merge, registry seed, seed change ---
+    dict(id=33, desc="edp: initial (versioned dim, empty batch stage, registry and live seeds)", select=EDP,
+         flags=["--full-refresh"], vars={**STEADY, "fp_batch_stage": 0}),
+    dict(id=34, desc="edp: rows land in the empty stage; seeds reloaded unchanged (registry unhashable)", select=EDP,
+         vars={**STEADY, "fp_batch_stage": 1}),
+    dict(id=35, desc="edp: late chunk of the current batch lands exactly at the watermark", select=EDP,
+         vars={**STEADY, "fp_batch_stage": 2}),
+    dict(id=36, desc="edp: next batch", select=EDP, vars={**STEADY, "fp_batch_stage": 3}),
+    dict(id=37, desc="edp: seed content changed (live seed row status, registry label)", select=EDP,
+         vars={**STEADY, "fp_batch_stage": 3}, files={SEED_LIVE: "changed", REGISTRY: "changed"}),
+    dict(id=38, desc="edp: versioned dim gets backdated keys, child builds", select=EDP,
+         vars={**STEADY, "fp_source": "inplace", "fp_batch_stage": 3}),
 ]
 
 
@@ -133,11 +179,25 @@ def main() -> int:
             print("[fingerprint] FAIL: seeding")
             return 1
 
+    originals = {path: (here / path).read_text() for path in FILE_VARIANTS}
+
+    def restore_files() -> None:
+        for path, text in originals.items():
+            if (here / path).read_text() != text:
+                (here / path).write_text(text)
+                print(f"[fingerprint] restored {path}", flush=True)
+
+    atexit.register(restore_files)
+
     results: list[tuple[int, str, bool]] = []
     for sc in chosen:
         sid = sc["id"]
         deploy_id = f"fp_{run_tag}_{sid}"
         print(f"\n[fingerprint] ===== {sid}: {sc['desc']} =====", flush=True)
+
+        for path, variant in sc.get("files", {}).items():
+            (here / path).write_text(FILE_VARIANTS[path][variant])
+            print(f"[fingerprint] wrote {path} variant {variant!r}", flush=True)
 
         steps = sc.get("steps") or [dict(select=sc["select"], flags=sc.get("flags", []), vars=sc.get("vars", {}))]
         ok = True

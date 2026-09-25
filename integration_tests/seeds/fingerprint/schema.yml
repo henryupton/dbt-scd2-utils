@@ -29,3 +29,22 @@ seeds:
   - name: fp_raw_deleted_b
     description: Deleted without customer 4 as well, a July row removed at source.
     config: *fp_raw_config
+  - name: fp_registry
+    description: A registry seed in the shape of the real ones, with no loaded-at column. Reads unhashable whether or not its content changed; the runner rewrites a label in scenario 37.
+    config:
+      tags: [fp_edp]
+      column_types:
+        event_type: varchar
+        label: varchar
+        is_active: boolean
+  - name: fp_seed_live
+    description: The deleted_b customer rows with _loaded_at. The runner rewrites customer 3's status in scenario 37, so a reload with changed content reads modified.
+    config:
+      tags: [fp_edp]
+      column_types:
+        customer_id: integer
+        customer_name: varchar
+        email: varchar
+        status: varchar
+        _updated_at: timestamp_tz
+        _loaded_at: timestamp_tz
