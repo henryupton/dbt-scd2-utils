@@ -1,0 +1,5 @@
+version: 2
+
+models:
+  - name: fp_edge_norowts
+    description: Merge-built table whose row timestamps this folder's post-hook switches off before the fingerprint runs. Reads unhashable after the first build (which replaces the object and reads new).

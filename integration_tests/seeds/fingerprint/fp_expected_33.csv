@@ -1,0 +1,9 @@
+node_name,verdict
+fp_dim_versioned,new
+fp_child_of_versioned,new
+fp_stg_batch,new
+fp_child_of_batch,new
+fp_registry,new
+fp_child_of_registry,new
+fp_seed_live,new
+fp_child_of_seed_live,new

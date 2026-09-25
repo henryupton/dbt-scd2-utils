@@ -1,0 +1,88 @@
+version: 2
+
+models:
+  - name: fp_dim_scd2
+    description: SCD type 2 fixture. Merge on incremental runs, truncate + insert on full refresh.
+  - name: fp_dim_scd1
+    description: SCD type 1 fixture. In-place overwrite of a changed key moves rows below the watermark.
+  - name: fp_evt_merge
+    description: dbt incremental merge on an event id. Unguarded update rewrites matched rows with equal values.
+  - name: fp_stg_append
+    description: dbt incremental append above a watermark with full_refresh false, the protected staging shape.
+  - name: fp_table_replace
+    description: dbt table. create or replace on every build, so always new.
+  - name: fp_child_guarded
+    description: Child of fp_dim_scd2 built by the test-only guarded_table materialization, which skips when the parent verdict allows.
+  - name: fp_fct_overwrite
+    description: Test-only insert-overwrite fact, the shape the project's truncate_insert uses.
+  - name: fp_child_of_overwrite
+    description: Guarded child of fp_fct_overwrite.
+  - name: fp_evt_evolve
+    description: Incremental merge with on_schema_change append_new_columns; a new column arrives by ALTER, not replace.
+  - name: fp_child_of_evolve
+    description: Guarded child of fp_evt_evolve.
+  - name: fp_evt_sync
+    description: Incremental merge with on_schema_change sync_all_columns; dropped columns leave by ALTER.
+  - name: fp_child_of_sync
+    description: Guarded child of fp_evt_sync.
+  - name: fp_parent_no_loaded_at
+    description: Merge-built table without a loaded-at column; must read unhashable.
+  - name: fp_child_of_unhashable
+    description: Guarded child of an unhashable parent; must always build.
+  - name: fp_child_of_view
+    description: Guarded child of a view; must always build.
+  - name: fp_child_of_seed
+    description: Guarded child of a seed; must build whether the seed is selected (new) or not (unregistered).
+  - name: fp_child_of_no_tt
+    description: Guarded child of a table with no Time Travel; parent reads error, child must build.
+  - name: fp_child_late
+    description: Enabled mid-sequence and aliased per run so no table exists yet; must build regardless of parent verdicts.
+  - name: fp_dim_versioned
+    description: Versioned SCD type 2 dim, the warehouse shape. Built as fp_dim_versioned_v1; the child refs the unversioned name.
+    latest_version: 1
+    versions:
+      - v: 1
+  - name: fp_child_of_versioned
+    description: Guarded child of the versioned dim, ref'd by its unversioned name; skips when the dim is unchanged, builds when it is modified.
+  - name: fp_stg_batch
+    description: Staging merge with a batch-stamped _loaded_at. Empty at first, then batches; a late chunk of the current batch lands exactly at the watermark and must read modified.
+  - name: fp_child_of_batch
+    description: Guarded child of fp_stg_batch.
+  - name: fp_child_of_registry
+    description: Guarded child of a registry seed with no loaded-at column; the parent reads unhashable whatever its content, so this always builds.
+  - name: fp_child_of_seed_live
+    description: Guarded child of a seed whose content the runner rewrites mid-sequence; skips on an identical reload, builds on a changed one.
+  - name: fp_edge_parent_a
+    description: Merge parent read only through the ephemeral fp_edge_eph and by fp_edge_child_multi; fp_edge_a_flip changes a value below the watermark.
+  - name: fp_edge_parent_b
+    description: Merge parent of fp_edge_child_multi; fp_edge_b_flip changes a value below the watermark, fp_edge_fail_b fails the build so it stays pending.
+  - name: fp_edge_eph
+    description: Ephemeral over fp_edge_parent_a. Never registered; the guard looks through it.
+  - name: fp_edge_child_of_eph
+    description: Guarded child whose only parent is ephemeral; skips or builds on fp_edge_parent_a's verdict.
+  - name: fp_edge_child_multi
+    description: Guarded child of two parents; one blocking verdict builds it. The runner rewrites this file once so its checksum moves.
+  - name: fp_edge_grandchild
+    description: Guarded child of fp_edge_child_multi; skips when its parent was skipped, builds when its parent was built.
+  - name: fp_edge_adopted
+    description: Guarded table first built with the fingerprint off, under an alias fresh per run; with no baseline for the relation it builds once, then skips.
+  - name: fp_edge_scd2
+    description: SCD type 2 for the validity blind spot; a full refresh with a different default_valid_to moves _valid_to and nothing else.
+  - name: fp_edge_child_of_scd2
+    description: Guarded child of fp_edge_scd2.
+  - name: fp_edge_child_of_norowts
+    description: Guarded child of a table without row timestamps; the parent reads unhashable, so this always builds.
+  - name: fp_edge_numeric
+    description: Insert-overwrite table whose _loaded_at is an epoch number; reads unhashable.
+  - name: fp_edge_child_of_numeric
+    description: Guarded child of fp_edge_numeric; always builds.
+  - name: fp_edge_geo
+    description: Insert-overwrite table with a GEOGRAPHY column (left out of the hash, named in the detail), an OBJECT and an ARRAY (hashed); fp_edge_geo_tier changes a value inside the object.
+  - name: fp_edge_quoted
+    description: Insert-overwrite table with mixed-case, space-bearing identifiers, a per-model loaded-at column and a per-model exclusion that changes every build.
+  - name: fp_edge_nulls
+    description: Insert-overwrite table with null _loaded_at rows steered by fp_edge_null_ids and fp_edge_null_extra; none of it may read appended.
+  - name: fp_edge_ntz
+    description: Insert-overwrite table with a timestamp_ntz _loaded_at built under a Pacific/Auckland session; fp_edge_ntz_extra appends a row one hour above the watermark.
+  - name: fp_edge_date
+    description: Insert-overwrite table with a date _loaded_at; fp_edge_date_extra adds rows on the watermark day (modified) or a later day (appended).
