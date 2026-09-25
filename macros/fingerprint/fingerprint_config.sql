@@ -82,6 +82,44 @@
   {{ return(" qualify row_number() over (partition by deploy_id, node_id order by finished_at desc nulls last, registered_at desc) = 1") }}
 {% endmacro %}
 
+{# database.schema.alias as the ledger records it, from a graph node or the model context. #}
+{% macro fingerprint_relation_name(node) %}
+  {%- set alias = node.alias if (node.alias is defined and node.alias) else node.name -%}
+  {{ return(node.database ~ '.' ~ node.schema ~ '.' ~ alias) }}
+{% endmacro %}
+
+{% macro fingerprint_is_ephemeral(node) %}
+  {%- if node is none or node.config is not defined or node.config is none or node.config.materialized is not defined -%}
+    {{ return(false) }}
+  {%- endif -%}
+  {{ return((node.config.materialized | string | lower) == 'ephemeral') }}
+{% endmacro %}
+
+{#
+  A node's fingerprintable parents: the models, seeds and snapshots it reads, looking through ephemeral models to
+  their own parents. An ephemeral model has no relation and runs no hooks, so it can never carry a verdict; left
+  in, it would sit `pending` and block every descendant for good.
+#}
+{% macro fingerprint_parent_ids(node, _depth=0) %}
+  {%- set out = [] -%}
+  {%- if node is none or node.depends_on is not defined or _depth > 20 -%}
+    {{ return(out) }}
+  {%- endif -%}
+  {%- for p in node.depends_on.nodes -%}
+    {%- if p.startswith('model.') or p.startswith('seed.') or p.startswith('snapshot.') -%}
+      {%- set g = graph.nodes.get(p) if graph is defined else none -%}
+      {%- if dbt_scd2_utils.fingerprint_is_ephemeral(g) -%}
+        {%- for pp in dbt_scd2_utils.fingerprint_parent_ids(g, _depth + 1) -%}
+          {%- if pp not in out -%}{%- do out.append(pp) -%}{%- endif -%}
+        {%- endfor -%}
+      {%- elif p not in out -%}
+        {%- do out.append(p) -%}
+      {%- endif -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(out) }}
+{% endmacro %}
+
 {#
   The node's source checksum from the manifest, or none when the engine does not expose one. The guard compares
   it with the checksum recorded at the node's last fingerprinted build, so a node whose own SQL changed is never

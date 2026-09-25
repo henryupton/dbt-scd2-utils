@@ -14,6 +14,10 @@ a change made before the build's snapshot belongs to no deploy and is correctly 
 Scenarios 33 to 38 are the project's own shapes: a versioned dim, a batch-stamped staging merge
 that starts empty, a registry seed with no loaded-at column, and a seed whose CSV the runner
 rewrites mid-sequence (FILE_VARIANTS); the originals are restored when the runner exits.
+Scenarios 39 to 53 are the guard's remaining branches (ephemeral, multi-parent, transitive,
+checksum, no baseline, pending, retry) and the hooks' edge cases (no row timestamps, numeric,
+geography and variant columns, quoted identifiers, null and non-tz loaded-at, the scd validity
+blind spot). A step marked expect_fail must exit non-zero: it leaves a parent pending on purpose.
 
 Usage:
     ./test_fingerprint_sequence.py [--profile default] [--target dev] [--dbt /path/to/dbt]
@@ -35,11 +39,14 @@ OVER = "tag:fp_overwrite"
 EVOLVE = "tag:fp_evolve"
 GUARD = "tag:fp_guard"
 EDP = "tag:fp_edp"
+EDGE = "tag:fp_edge"
 
-# Seeds the runner rewrites mid-sequence so a reload carries changed content. A variant stays in
-# place for the scenarios that follow; the committed originals are restored when the runner exits.
+# Files the runner rewrites mid-sequence: seeds so a reload carries changed content, one guarded model so
+# its checksum moves while its parents stay put. A variant stays in place for the scenarios that follow;
+# the committed originals are restored when the runner exits.
 SEED_LIVE = "seeds/fingerprint/fp_seed_live.csv"
 REGISTRY = "seeds/fingerprint/fp_registry.csv"
+CHILD_MULTI = "models/fingerprint/fp_edge_child_multi.sql"
 FILE_VARIANTS = {
     SEED_LIVE: {
         # customer 3 flips INACTIVE -> ACTIVE with the same timestamps
@@ -63,10 +70,37 @@ FILE_VARIANTS = {
             "subscription_started,Subscription started,true\n"
         ),
     },
+    CHILD_MULTI: {
+        # the same model with one more comment line: same output, different checksum
+        "changed": (
+            "{{\n"
+            "    config(\n"
+            "        materialized='guarded_table',\n"
+            "        tags=['fp_edge']\n"
+            "    )\n"
+            "}}\n"
+            "\n"
+            "{# Two parents: one blocking verdict on either side builds it. The runner rewrites this file in one #}\n"
+            "{# scenario so its checksum moves while both parents stay unchanged. #}\n"
+            "{# Rewritten by the runner: this comment is the change. #}\n"
+            "select a.customer_id, a.email, b.status\n"
+            "from {{ ref('fp_edge_parent_a') }} a\n"
+            "join {{ ref('fp_edge_parent_b') }} b on a.customer_id = b.customer_id\n"
+        ),
+    },
 }
 
 # Fixture state after scenario 14, reused by the later groups so they start from a known shape.
 STEADY = {"fp_source": "deleted_b", "fp_upper_email": True, "fp_extra_column": True, "fp_null_email_customer": 3}
+
+# The edge group's knobs accumulate; each scenario carries the state the previous one left.
+EDGE_41 = {**STEADY, "fp_edge_b_flip": True, "fp_edge_null_ids": [2], "fp_edge_geo_tier": "gold"}
+EDGE_42 = {**EDGE_41, "fp_edge_a_flip": True, "fp_edge_quoted_flip": True, "fp_edge_ntz_extra": True,
+           "fp_edge_date_extra": ["2026-08-20"]}
+EDGE_43 = {**EDGE_42, "fp_edge_null_extra": "ACTIVE", "fp_edge_date_extra": ["2026-08-20", "2026-08-21"]}
+EDGE_44 = {**EDGE_43, "fp_edge_null_extra": "INACTIVE"}
+EDGE_45 = {k: v for k, v in EDGE_44.items() if k != "fp_edge_null_extra"}
+SCD2_PAIR = "fp_edge_scd2 fp_edge_child_of_scd2 fp_ledger"
 
 SCENARIOS = [
     # --- core: initial load and the plain shapes ---------------------------------------------
@@ -132,8 +166,9 @@ SCENARIOS = [
     dict(id=32, desc="guard: seed selected with --full-refresh, create or replace (child builds)",
          select=f"{GUARD} fp_raw_deleted_b", flags=["--full-refresh"], vars=STEADY),
     # --- the project's own shapes: versioned dim, batch-stamped staging merge, registry seed, seed change ---
+    # The scd dim is replaced on the initial so a rerun over an existing table reads new, not modified.
     dict(id=33, desc="edp: initial (versioned dim, empty batch stage, registry and live seeds)", select=EDP,
-         flags=["--full-refresh"], vars={**STEADY, "fp_batch_stage": 0}),
+         flags=["--full-refresh"], vars={**STEADY, "fp_batch_stage": 0, "fp_full_refresh_strategy": "replace"}),
     dict(id=34, desc="edp: rows land in the empty stage; seeds reloaded unchanged (registry unhashable)", select=EDP,
          vars={**STEADY, "fp_batch_stage": 1}),
     dict(id=35, desc="edp: late chunk of the current batch lands exactly at the watermark", select=EDP,
@@ -143,6 +178,42 @@ SCENARIOS = [
          vars={**STEADY, "fp_batch_stage": 3}, files={SEED_LIVE: "changed", REGISTRY: "changed"}),
     dict(id=38, desc="edp: versioned dim gets backdated keys, child builds", select=EDP,
          vars={**STEADY, "fp_source": "inplace", "fp_batch_stage": 3}),
+    # --- the guard's remaining branches and the hooks' edge cases ---------------------------------------
+    dict(id=39, desc="edge: initial, create or replace everywhere", select=EDGE, flags=["--full-refresh"],
+         vars={**STEADY, "fp_full_refresh_strategy": "replace"}),
+    dict(id=40, desc="edge: nothing changed (ephemeral looked through, grandchild skips, unhashable children build, "
+                     "geography left out, quoted exclusion holds)", select=EDGE, vars=STEADY),
+    dict(id=41, desc="edge: one of two parents modified; a row's stamp moves to null; a value inside an object changes",
+         select=EDGE, vars=EDGE_41),
+    dict(id=42, desc="edge: the ephemeral's parent modified; quoted value flips; ntz row appended one hour up; "
+                     "date row on the watermark day", select=EDGE, vars=EDGE_42),
+    dict(id=43, desc="edge: a null-stamped row is inserted (not appended); a later date row is appended", select=EDGE,
+         vars=EDGE_43),
+    dict(id=44, desc="edge: the null-stamped row changes", select=EDGE, vars=EDGE_44),
+    dict(id=45, desc="edge: the null-stamped row is removed", select=EDGE, vars=EDGE_45),
+    dict(id=46, desc="edge: a guarded child's own SQL changes while its parents stay unchanged", select=EDGE,
+         vars=EDGE_45, files={CHILD_MULTI: "changed"}),
+    dict(id=47, desc="edge: the changed SQL is now the baseline; it skips again", select=EDGE, vars=EDGE_45),
+    dict(id=48, desc="edge: scd2 full refresh moving only _valid_to reads unchanged with the scd columns excluded (pinned)",
+         select=SCD2_PAIR, flags=["--full-refresh"], vars={**EDGE_45, "default_valid_to": "2999-01-01 00:00:00"}),
+    dict(id=49, desc="edge: the same move with the scd columns included reads modified", select=SCD2_PAIR,
+         flags=["--full-refresh"], vars={**EDGE_45, "fingerprint_exclude_scd_columns": False}),
+    dict(id=50, desc="edge: a table built with the fingerprint off, then guarded: no baseline, builds once", steps=[
+        dict(select="fp_edge_adopted", vars={**EDGE_45, "fingerprint": False, "fp_enable_adopted": True}),
+        dict(select=EDGE, vars={**EDGE_45, "fp_enable_adopted": True}),
+    ]),
+    dict(id=51, desc="edge: the adopted table skips now it has a baseline", select=EDGE,
+         vars={**EDGE_45, "fp_enable_adopted": True}),
+    dict(id=52, desc="two-step: a parent fails in A and stays pending; its children build in B, the other's skips", steps=[
+        dict(select="fp_edge_parent_a fp_edge_parent_b", vars={**EDGE_45, "fp_edge_fail_b": True}, expect_fail=True),
+        dict(select="fp_edge_child_of_eph fp_edge_child_multi fp_edge_grandchild fp_ledger", vars=EDGE_45),
+    ]),
+    dict(id=53, desc="retry: the failed parent is rerun under the same deploy id and settles against the original snapshot",
+         steps=[
+             dict(select="fp_edge_parent_a fp_edge_parent_b", vars={**EDGE_45, "fp_edge_fail_b": True}, expect_fail=True),
+             dict(select="fp_edge_parent_a fp_edge_parent_b", vars=EDGE_45),
+             dict(select=EDGE, vars=EDGE_45),
+         ]),
 ]
 
 
@@ -208,14 +279,17 @@ def main() -> int:
                 "fingerprint": True,
                 "fingerprint_skip_unchanged_upstream": True,
                 "deploy_id": deploy_id,
-                # fp_child_late must never pre-exist, so it gets a fresh alias every run.
+                # fp_child_late and fp_edge_adopted must never pre-exist, so they get a fresh alias every run.
                 "fp_late_alias": f"fp_child_late_{run_tag}",
+                "fp_adopted_alias": f"fp_edge_adopted_{run_tag}",
                 **step.get("vars", {}),
             }
             last_vars = step_vars
             cmd = [args.dbt, "build", "--select", *step["select"].split(), "--vars", json.dumps(step_vars),
                    *step.get("flags", []), *common]
-            if run(cmd).returncode != 0:
+            failed = run(cmd).returncode != 0
+            if failed != bool(step.get("expect_fail")):
+                print(f"[fingerprint] step {'succeeded but was expected to fail' if not failed else 'failed'}", flush=True)
                 ok = False
                 break
 

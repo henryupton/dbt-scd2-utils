@@ -1,0 +1,17 @@
+node_name,verdict
+fp_edge_parent_a,unchanged
+fp_edge_parent_b,modified
+fp_edge_child_of_eph,skipped
+fp_edge_child_multi,new
+fp_edge_grandchild,new
+fp_edge_scd2,unchanged
+fp_edge_child_of_scd2,skipped
+fp_edge_norowts,unhashable
+fp_edge_child_of_norowts,new
+fp_edge_numeric,unhashable
+fp_edge_child_of_numeric,new
+fp_edge_geo,modified
+fp_edge_quoted,unchanged
+fp_edge_nulls,modified
+fp_edge_ntz,unchanged
+fp_edge_date,unchanged

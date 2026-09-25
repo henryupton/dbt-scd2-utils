@@ -6,7 +6,9 @@
   `snapshot_at`, Snowflake's clock at run start. The post-hook (fingerprint_post) reads the
   pre-build table through Time Travel at that anchor, so it is deliberately the database clock
   and not dbt's run_started_at. A node already registered for this deploy id (an earlier step of
-  the same deploy) is left alone.
+  the same deploy) is left alone. Ephemeral models are not registered: they have no relation and
+  run no hooks, so they could never leave `pending`; their descendants list the ephemeral's own
+  parents instead.
 
     on-run-start:
       - "{{ dbt_scd2_utils.fingerprint_register() }}"
@@ -41,7 +43,7 @@
   {%- set groups = {} -%}
   {%- for uid in selected -%}
     {%- set n = graph.nodes.get(uid) -%}
-    {%- if n is not none and n.resource_type in ['model', 'seed', 'snapshot'] -%}
+    {%- if n is not none and n.resource_type in ['model', 'seed', 'snapshot'] and not dbt_scd2_utils.fingerprint_is_ephemeral(n) -%}
       {%- set alias = n.alias if (n.alias is defined and n.alias) else n.name -%}
       {%- set group_key = (n.database ~ '.' ~ n.schema) | upper -%}
       {%- if group_key not in groups -%}
@@ -83,17 +85,14 @@
   {%- for item in items -%}
     {%- set n = item.node -%}
     {%- set parents = [] -%}
-    {%- for p in n.depends_on.nodes -%}
-      {%- if p.startswith('model.') or p.startswith('seed.') or p.startswith('snapshot.') -%}
-        {%- do parents.append("'" ~ p ~ "'") -%}
-      {%- endif -%}
+    {%- for p in dbt_scd2_utils.fingerprint_parent_ids(n) -%}
+      {%- do parents.append(dbt_scd2_utils.fingerprint_lit(p)) -%}
     {%- endfor -%}
-    {%- set relation_name = n.database ~ '.' ~ n.schema ~ '.' ~ item.alias -%}
     {%- do rows.append(
         "select " ~ dbt_scd2_utils.fingerprint_lit(deploy_id) ~ " as deploy_id"
         ~ ", " ~ dbt_scd2_utils.fingerprint_lit(item.uid) ~ " as node_id"
         ~ ", " ~ dbt_scd2_utils.fingerprint_lit(n.name) ~ " as node_name"
-        ~ ", " ~ dbt_scd2_utils.fingerprint_lit(relation_name) ~ " as relation_name"
+        ~ ", " ~ dbt_scd2_utils.fingerprint_lit(dbt_scd2_utils.fingerprint_relation_name(n)) ~ " as relation_name"
         ~ ", array_construct(" ~ (parents | join(', ')) ~ ") as parents"
         ~ ", " ~ dbt_scd2_utils.fingerprint_ts_lit(snapshot_at) ~ " as snapshot_at"
         ~ ", " ~ dbt_scd2_utils.fingerprint_lit(dbt_scd2_utils.fingerprint_loaded_at_column(n)) ~ " as loaded_at_column"

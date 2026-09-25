@@ -4,11 +4,12 @@
   fingerprint_should_skip() answers "may this node's build be skipped?" from the ledger: true only
   when `fingerprint_skip_unchanged_upstream` is on, at least one parent is registered in this
   deploy, every registered parent finished `unchanged`, `appended` or `skipped`, and the node's
-  own source checksum matches the one recorded at its last fingerprinted build. A parent that is
-  `pending`, `new`, `modified`, `unhashable` or `error` blocks. A node with no parents, none
-  registered in this deploy, or no fingerprinted build on record is never skipped: the guard
-  cannot tell why it is being built. Nor is a node whose own SQL changed, however its parents
-  came out; the parents say nothing about that.
+  own source checksum matches the one recorded at its last fingerprinted build of this relation.
+  A parent that is `pending`, `new`, `modified`, `unhashable` or `error` blocks. Ephemeral parents
+  are looked through to their own parents. A node with no parents, none registered in this
+  deploy, or no fingerprinted build of this relation on record is never skipped: the guard cannot
+  tell why it is being built. Nor is a node whose own SQL changed, however its parents came out;
+  the parents say nothing about that.
 
   fingerprint_mark_skipped() appends the skip so the node's own children can read it.
 
@@ -21,10 +22,8 @@
   {%- endif -%}
   {%- set node = node if node is not none else model -%}
   {%- set parents = [] -%}
-  {%- for p in node.depends_on.nodes -%}
-    {%- if p.startswith('model.') or p.startswith('seed.') or p.startswith('snapshot.') -%}
-      {%- do parents.append(dbt_scd2_utils.fingerprint_lit(p)) -%}
-    {%- endif -%}
+  {%- for p in dbt_scd2_utils.fingerprint_parent_ids(node) -%}
+    {%- do parents.append(dbt_scd2_utils.fingerprint_lit(p)) -%}
   {%- endfor -%}
   {%- if parents | length == 0 -%}
     {{ return(false) }}
@@ -45,14 +44,20 @@
     {{ return(false) }}
   {%- endif -%}
 
-  {# The node's own SQL: its checksum has to match the one recorded at its last fingerprinted build. #}
+  {#
+    The node's own SQL: its checksum has to match the one recorded at its last fingerprinted build of this
+    relation. Scoped to the relation because a baseline says "this SQL last built this table"; a table the
+    fingerprint has never seen (a model newly guarded, or a new alias) has to be built once before it can skip.
+  #}
   {%- set current = dbt_scd2_utils.fingerprint_node_checksum(node) -%}
   {%- set base = run_query(
       "select checksum, deploy_id from " ~ node_rel
-      ~ " where node_id = " ~ dbt_scd2_utils.fingerprint_lit(node.unique_id) ~ " and verdict <> 'pending'"
+      ~ " where node_id = " ~ dbt_scd2_utils.fingerprint_lit(node.unique_id)
+      ~ " and relation_name = " ~ dbt_scd2_utils.fingerprint_lit(dbt_scd2_utils.fingerprint_relation_name(node))
+      ~ " and verdict <> 'pending'"
       ~ " order by finished_at desc nulls last, registered_at desc limit 1") -%}
   {%- if base.rows | length == 0 -%}
-    {%- do log("fingerprint: " ~ node.name ~ " has no fingerprinted build on record; building", info=true) -%}
+    {%- do log("fingerprint: " ~ node.name ~ " has no fingerprinted build of this relation on record; building", info=true) -%}
     {{ return(false) }}
   {%- endif -%}
   {%- set baseline = base.rows[0][0] -%}

@@ -51,9 +51,40 @@ The `fp_edp` group (scenarios 33 to 38) holds the project's own shapes:
   carries changed content and reads `modified`. The runner restores the committed CSVs when it exits.
 
 The guard also refuses to skip a node whose own source checksum differs from its last fingerprinted
-build. Fixture model SQL is steered by vars, not edits (the runner rewrites two seed CSVs, never a
-model), so guarded checksums never move between scenarios and the expected verdicts hold from the
-first run on a fresh schema.
+build of the same relation. Fixture model SQL is steered by vars, not edits, so guarded checksums never
+move between scenarios except where a scenario means them to: the runner rewrites two seed CSVs and one
+guarded model (`fp_edge_child_multi`) and restores them when it exits. Every group's first scenario
+builds each guarded child, so the expected verdicts hold from the first run on a fresh schema and on
+every rerun.
+
+The `fp_edge` group (scenarios 39 to 53) holds the guard's remaining branches and the hooks' edge cases:
+
+- **`fp_edge_parent_a`**, **`fp_edge_parent_b`** - two merge parents with a value flip each; `b` can also be
+  made to fail, so it stays `pending` for the rest of its deploy.
+- **`fp_edge_eph`** and **`fp_edge_child_of_eph`** - an ephemeral over `a` and a guarded child that reads only
+  through it. The ephemeral is never registered; the guard looks through it to `a`.
+- **`fp_edge_child_multi`** and **`fp_edge_grandchild`** - a two-parent child (one blocking parent builds it,
+  as does its own SQL changing) and a guarded child of it, which skips only when its parent was skipped.
+- **`fp_edge_adopted`** - a table first built with the fingerprint off, under an alias fresh per run: no
+  baseline for the relation, so it builds once, then skips.
+- **`fp_edge_scd2`** - the validity blind spot pinned: a full refresh with a different `default_valid_to` reads
+  `unchanged` with the scd columns excluded (the default) and `modified` with `fingerprint_exclude_scd_columns`
+  false.
+- **`fp_edge_norowts`** (its folder switches `ROW_TIMESTAMP` off before the fingerprint runs) and
+  **`fp_edge_numeric`** (an epoch-number loaded-at) - both `unhashable`, both children always build.
+- **`fp_edge_geo`** - a `GEOGRAPHY` column left out of the hash beside an `OBJECT` and an `ARRAY` that are in it.
+- **`fp_edge_quoted`** - mixed-case, space-bearing identifiers, `meta.fingerprint_loaded_at` and a per-model
+  `meta.fingerprint_exclude` on a column that changes every build.
+- **`fp_edge_nulls`** - rows with a null loaded-at, moved into the null bucket, added, changed and removed;
+  none may read `appended`.
+- **`fp_edge_ntz`** and **`fp_edge_date`** - `timestamp_ntz` under a Pacific/Auckland session and `date`
+  loaded-at columns: a row one hour above the watermark reads `appended`, a row on the watermark day `modified`.
+
+Two singular tests ride along with every group: `fp_one_pending_per_node` (registration stays idempotent
+across the steps and retries of one deploy) and `fp_skipped_left_alone` (no row of a skipped node's table
+was committed at or after the deploy's snapshot). Scenarios 52 and 53 fail a parent on purpose: the
+children then build on its `pending` verdict, and a retry under the same deploy id settles it against the
+original snapshot.
 
 The source rows come from `fp_customer_rows()` (`macros/fp_fixture_sql.sql`), steered by vars:
 `fp_source` picks a seed, `fp_upper_email` / `fp_null_email_customer` change values below the
@@ -132,7 +163,7 @@ dbt build --select +models/scd_materialization/
 
 #### Content Fingerprint
 ```bash
-# Thirty-eight ordered, stateful scenarios; each builds a selection with fingerprint: true and
+# Fifty-three ordered, stateful scenarios; each builds a selection with fingerprint: true and
 # asserts every fixture's verdict (new / unchanged / appended / modified / unhashable / error /
 # skipped) against fp_expected_<n>. Weighted towards false negatives: genuine changes that must
 # not be waved through, and guarded children that must build.

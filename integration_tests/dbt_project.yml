@@ -44,6 +44,11 @@ models:
     fingerprint_unprotected:
       +post-hook:
         - "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+    fingerprint_norowts:
+      +post-hook:
+        - "alter table {{ this }} set data_retention_time_in_days = 1"
+        - "alter table {{ this }} set row_timestamp = false"
+        - "{{ dbt_scd2_utils.fingerprint_post(this) }}"
 
 tests:
   dbt_scd2_utils_integration_tests:

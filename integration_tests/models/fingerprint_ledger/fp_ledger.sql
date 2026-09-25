@@ -1,7 +1,7 @@
 {{
     config(
         materialized='view',
-        tags=['fingerprint', 'fp_overwrite', 'fp_evolve', 'fp_guard', 'fp_late', 'fp_edp']
+        tags=['fingerprint', 'fp_overwrite', 'fp_evolve', 'fp_guard', 'fp_late', 'fp_edp', 'fp_edge']
     )
 }}
 
@@ -30,8 +30,27 @@
 -- depends_on: {{ ref('fp_child_of_batch') }}
 -- depends_on: {{ ref('fp_child_of_registry') }}
 -- depends_on: {{ ref('fp_child_of_seed_live') }}
+-- depends_on: {{ ref('fp_edge_parent_a') }}
+-- depends_on: {{ ref('fp_edge_parent_b') }}
+-- depends_on: {{ ref('fp_edge_child_of_eph') }}
+-- depends_on: {{ ref('fp_edge_child_multi') }}
+-- depends_on: {{ ref('fp_edge_grandchild') }}
+-- depends_on: {{ ref('fp_edge_scd2') }}
+-- depends_on: {{ ref('fp_edge_child_of_scd2') }}
+-- depends_on: {{ ref('fp_edge_norowts') }}
+-- depends_on: {{ ref('fp_edge_child_of_norowts') }}
+-- depends_on: {{ ref('fp_edge_numeric') }}
+-- depends_on: {{ ref('fp_edge_child_of_numeric') }}
+-- depends_on: {{ ref('fp_edge_geo') }}
+-- depends_on: {{ ref('fp_edge_quoted') }}
+-- depends_on: {{ ref('fp_edge_nulls') }}
+-- depends_on: {{ ref('fp_edge_ntz') }}
+-- depends_on: {{ ref('fp_edge_date') }}
 {% if var('fp_enable_late_child', false) %}
 -- depends_on: {{ ref('fp_child_late') }}
+{% endif %}
+{% if var('fp_enable_adopted', false) %}
+-- depends_on: {{ ref('fp_edge_adopted') }}
 {% endif %}
 
 {# The ledger is append-only: one pending row per node, then the verdict row. Latest wins. #}
