@@ -50,6 +50,7 @@
     {# of a content run survives, or a full refresh and the incremental runs that follow it keep     #}
     {# different versions of the same history.                                                       #}
     {%- set collapse_redundant_versions = arg_dict.get('collapse_redundant_versions', true) -%}
+    {%- set run_survivor = arg_dict.get('run_survivor', 'earliest_loaded') -%}
 
     {# Define our audit columns #}
     {%- set is_current_col = arg_dict.get('is_current_column') -%}
@@ -110,13 +111,14 @@ compare_versions as (
 
 {# Canonical timeline: one row per content run (a run = consecutive rows sharing _scd2_hash,   #}
 {# ordered by updated_at, so recurrence A -> B -> A stays three runs). When collapsing          #}
-{# redundant versions the survivor is the EARLIEST-LOADED row of the run, exactly as the merge  #}
-{# path keeps it: a bulk reload that re-delivers an earlier-dated copy of content that already  #}
-{# arrived in real time must not back-date the version, or its predecessor's valid_to, to a row #}
-{# that only landed later. For a monotonic source earliest-loaded is earliest-updated_at, so    #}
-{# this is a no-op there. Falls back to updated_at order when the model has no loaded_at        #}
-{# watermark. When NOT collapsing, keep the opener of every run; with no persisted rows on an   #}
-{# initial load that is the whole of the merge path's non-collapse rule.                        #}
+{# redundant versions, run_survivor picks the row that persists, exactly as the merge path      #}
+{# keeps it. 'earliest_loaded' (default): a bulk reload that re-delivers an earlier-dated copy  #}
+{# of content that already arrived in real time must not back-date the version, or its          #}
+{# predecessor's valid_to, to a row that only landed later. 'earliest_updated': the event clock #}
+{# wins, so a late-arriving earlier-dated event dates the run at its occurrence. For a          #}
+{# monotonic source the two orders agree (no-op). Falls back to updated_at order when the model #}
+{# has no loaded_at watermark. When NOT collapsing, keep the opener of every run; with no       #}
+{# persisted rows on an initial load that is the whole of the merge path's non-collapse rule.   #}
 changes_only as (
     {%- if collapse_redundant_versions %}
     select *
@@ -124,10 +126,15 @@ changes_only as (
     qualify row_number() over(
         partition by {{ unique_keys_csv }}, _run_id
         order by
+        {%- if run_survivor == 'earliest_updated' %}
+            {{ updated_at_col }} asc{% if has_loaded_at %},
+            {{ loaded_at_col }} asc    -- tiebreak only: the event clock leads{% endif %}
+        {%- else %}
         {%- if has_loaded_at %}
             {{ loaded_at_col }} asc,    -- earliest physical load wins, regardless of updated_at
         {%- endif %}
             {{ updated_at_col }} asc
+        {%- endif %}
     ) = 1
     {%- else %}
     select *

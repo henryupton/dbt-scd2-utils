@@ -236,6 +236,18 @@
   {%- endif -%}
   {%- set collapse_redundant_versions = collapse_redundant_versions and update_all_previous_records -%}
 
+  {# Which row of a content run becomes the persisted version — and donates its updated_at to #}
+  {# _valid_from. 'earliest_loaded' (default): the first physical arrival wins, so a re-extract #}
+  {# or bulk reload re-delivering earlier-dated copies of content that already arrived can never #}
+  {# back-date a persisted version. 'earliest_updated': the event clock wins, so a genuinely #}
+  {# late-arriving event backdates the version to when it occurred — for event-sourced models #}
+  {# where business time is authoritative and the source never re-delivers earlier-dated copies #}
+  {# of already-seen content. Handed to BOTH paths so full refresh and merge keep the same row. #}
+  {%- set run_survivor = dbt_scd2_utils.get_config_value(config, 'run_survivor', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'run_survivor', default='earliest_loaded')) -%}
+  {%- if run_survivor not in ['earliest_loaded', 'earliest_updated'] -%}
+    {%- do exceptions.raise_compiler_error("dbt_scd2_utils: run_survivor must be 'earliest_loaded' or 'earliest_updated' — got '" ~ run_survivor ~ "'") -%}
+  {%- endif -%}
+
   {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
   {# Recomputing the change column for every record ensures accuracy. #}
   {# No updating all previous records results in multiple 'I' records. #}
@@ -324,7 +336,8 @@
       'track_checksum': track_checksum,
       'checksum_column': checksum_col,
       'checksum_columns': checksum_columns,
-      'collapse_redundant_versions': collapse_redundant_versions
+      'collapse_redundant_versions': collapse_redundant_versions,
+      'run_survivor': run_survivor
   }  %}
 
   {%- if should_full_refresh -%}

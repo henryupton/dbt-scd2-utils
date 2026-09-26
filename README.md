@@ -219,12 +219,14 @@ vars:
   dbt_scd2_utils:
     update_all_previous_records: true   # default
     collapse_redundant_versions: true   # default
+    run_survivor: earliest_loaded       # default
 ```
 
 | Var | Default | Behaviour |
 |-----|---------|-----------|
 | `update_all_previous_records` | `true` | Re-evaluate every existing version of an affected key on each run, so out-of-order arrivals are slotted in correctly. Set to `false` only if data is guaranteed to arrive in chronological order — it is a performance optimisation that otherwise risks multiple `is_current` rows for a key. |
-| `collapse_redundant_versions` | `true` | When an out-of-order arrival has tracked columns identical to an existing version, the two collapse into one content run and the **earliest-loaded** row survives (by `loaded_at_column`, default `_loaded_at`; `updated_at` order when the model has no such column). A bulk reload that re-delivers an earlier-dated copy of content that already arrived therefore never back-dates the version or its predecessor's `valid_to`. With the default the now-redundant row is **deleted**, so an incremental run matches a full refresh, and the initial load applies the same survivor rule, so a full refresh followed by an incremental run over the same input is a no-op. Set to `false` to **keep** the redundant version instead (no deletes; the existing row is still correctly re-expired). Only takes effect when `update_all_previous_records` is also `true`. |
+| `collapse_redundant_versions` | `true` | When an out-of-order arrival has tracked columns identical to an existing version, the two collapse into one content run and one row survives per `run_survivor`. With the default the now-redundant row is **deleted**, so an incremental run matches a full refresh, and the initial load applies the same survivor rule, so a full refresh followed by an incremental run over the same input is a no-op. Set to `false` to **keep** the redundant version instead (no deletes; the existing row is still correctly re-expired). Only takes effect when `update_all_previous_records` is also `true`. |
+| `run_survivor` | `earliest_loaded` | Which row of a content run persists and donates its `updated_at` to `_valid_from`. `earliest_loaded`: the first physical arrival wins (by `loaded_at_column`, default `_loaded_at`; `updated_at` order when the model has no such column), so a bulk reload that re-delivers an earlier-dated copy of content that already arrived never back-dates the version or its predecessor's `valid_to`. `earliest_updated`: the event clock wins — a genuinely late-arriving event backdates the version to when it occurred, displacing the persisted later-dated version. Choose `earliest_updated` for event-sourced models where the `updated_at` column carries authoritative business time and the source never re-delivers earlier-dated copies of already-seen content; note that late events then rewrite history (`_valid_from`, surrogate keys derived from it) by design. Also settable per model via `config.meta.run_survivor`. |
 
 ### Key Matching & Search Optimization
 
