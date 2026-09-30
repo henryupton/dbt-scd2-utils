@@ -7,32 +7,30 @@
                 'exclude': ['_written_at', '_created_at', '_loaded_at']
             },
             'deleted_at_column': 'deleted_at',
-            'run_survivor': 'earliest_updated'
+            'backdate_valid_from': true
         }
     )
 }}
 
 {#
-    run_survivor: earliest_updated — the event clock dates the version.
+    backdate_valid_from: a late-arriving earlier-dated row corrects a version's _valid_from
+    without re-keying it.
 
-    A genuinely late-arriving event (_updated_at 2024-03-10, _loaded_at 2024-05-13)
-    collides with an on-time repeat observation of the same content (_updated_at
-    2024-05-10, _loaded_at 2024-05-10). The two share a hash, so they are one content
-    run. Under the default (earliest_loaded) the on-time row would survive and the
-    version would be dated 2024-05-10 — two months after the state actually changed.
-    Under earliest_updated the late event wins: the version is dated 2024-03-10 and
-    keeps the survivor's own _loaded_at (2024-05-13), so downstream loaded_at cursors
-    still see the late arrival.
+    When identical-content rows collapse into one version, the survivor is still the
+    EARLIEST-LOADED row (its _updated_at, _loaded_at and every other column, including any
+    key the model hashes from its own event time, are unchanged), but _valid_from becomes
+    the earliest event time across the run and the previous version's _valid_to follows it.
 
-    Key 400 has a successor version after the collapsed run, key 402 has the
-    collapsed run as its current version, key 401 is a monotonic control where the
-    two orders coincide.
-
-    The single raw seed is read on every iteration: iteration 1 is the initial load,
-    iteration 2 an incremental run over identical input that must be a no-op
-    (late_event_expected_1 == late_event_expected_2), proving the two paths keep the
-    same survivor in this mode too. Run via ./test_scd2_sequence.sh 1 2 late_event_scd2
+    Iteration 1 (initial load) has no late rows, except key 403, which already carries one.
+    Iteration 2 (incremental) lands a late ACTIVE row dated 03-10 but loaded 06-05 for keys
+    400 (mid history) and 402 (current version): each ACTIVE version keeps its 05-10 survivor
+    and moves _valid_from to 03-10. Key 403's batch holds only a second late row (04-01), so
+    its earlier 03-10 start is visible only through the persisted _valid_from, and it must
+    not regress to 04-01. Key 401 is a monotonic control. Iteration 3 re-runs iteration 2's
+    input and must be a no-op. Run via ./test_scd2_sequence.sh 1 3 late_event_scd2
 #}
+
+{%- set iteration = var('iteration', 1) -%}
 
 select
     customer_id,
@@ -44,4 +42,4 @@ select
     _updated_at::timestamp_tz as _updated_at,
     _loaded_at::timestamp_tz as _loaded_at,
     sysdate() as _written_at
-from {{ ref('late_event_raw_1') }}
+from {{ ref('late_event_raw_' ~ iteration) }}

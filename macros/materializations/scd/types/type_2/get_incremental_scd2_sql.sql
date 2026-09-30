@@ -53,6 +53,7 @@
     {%- set deleted_at_col = arg_dict.get('deleted_at_column') -%}
     {%- set update_all_previous_records = arg_dict['update_all_previous_records'] -%}
     {%- set collapse_redundant_versions = arg_dict.get('collapse_redundant_versions', true) -%}
+    {%- set backdate_valid_from = arg_dict.get('backdate_valid_from', false) -%}
     {# true -> equal_null (null-safe, default), false -> plain = (prune/SOS-eligible). #}
     {%- set key_match_null_safe = arg_dict.get('key_match_null_safe', true) -%}
     {%- set track_previous_version = arg_dict.get('track_previous_version', false) -%}
@@ -71,7 +72,6 @@
     {# emits no loaded_at watermark (loaded_at_column defaults to the audit load timestamp). #}
     {%- set loaded_at_col = arg_dict.get('loaded_at_column', '_loaded_at') -%}
     {%- set has_loaded_at = (loaded_at_col | upper) in (dest_columns | map(attribute='name') | map('upper') | list) -%}
-    {%- set run_survivor = arg_dict.get('run_survivor', 'earliest_loaded') -%}
 
     {# Prepare column lists for the MERGE statement #}
     {%- set unique_keys_csv = dbt_scd2_utils.get_quoted_csv(unique_key | map("upper")) -%}
@@ -90,6 +90,9 @@ using (
             select
                 {{ dest_cols_csv }},
                 'new' as _source,
+                {%- if backdate_valid_from %}
+                cast(null as timestamp_tz) as _scd2_prev_valid_from,
+                {%- endif %}
                 {{ dbt_utils.generate_surrogate_key(scd2_unique_key) }} as _scd2_key,
                 {{ dbt_utils.generate_surrogate_key(scd_check_columns | list) }} as _scd2_hash,
             from {{ temp_relation }}
@@ -101,6 +104,12 @@ using (
             select
                 {{ dbt_scd2_utils.get_quoted_csv(dest_cols_names, 'p.') }},
                 'previous' as _source,
+                {%- if backdate_valid_from %}
+                {# A persisted version's start may already sit before its survivor's updated_at (an earlier #}
+                {# backdate whose source row was collapsed away), so it must feed the run minimum or the start #}
+                {# regresses. A first version's start can come from created_at, so it is not carried. #}
+                iff(p.{{ change_type_col }} = 'I', null, p.{{ valid_from_col }}) as _scd2_prev_valid_from,
+                {%- endif %}
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd2_unique_key, 'p.')) }} as _scd2_key,
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd_check_columns, 'p.')) }} as _scd2_hash,
             from {{ this }} as p
@@ -135,6 +144,9 @@ using (
                 _source,
                 _scd2_key,
                 _scd2_hash,
+                {%- if backdate_valid_from %}
+                _scd2_prev_valid_from,
+                {%- endif %}
             from new_records
             
             union all
@@ -146,6 +158,9 @@ using (
                 _source,
                 _scd2_key,
                 _scd2_hash,
+                {%- if backdate_valid_from %}
+                _scd2_prev_valid_from,
+                {%- endif %}
             from previous_record
         )
         -- select * from all_records {{ unique_keys_csv }}, {{ updated_at_col }} limit 321;
@@ -188,30 +203,26 @@ using (
 
         {# Canonical timeline: one row per content run (a run = consecutive rows sharing _scd2_hash, #}
         {# ordered by updated_at, so recurrence A -> B -> A stays three runs). When collapsing #}
-        {# redundant versions, run_survivor picks the row that persists. 'earliest_loaded' (default): #}
-        {# a later load carrying identical content is dropped even if its updated_at is earlier, so it #}
-        {# never displaces, back-dates, or deletes the already-persisted version. 'earliest_updated': #}
-        {# the event clock wins — a late-arriving earlier-dated event backdates the run to when it #}
-        {# occurred, displacing the persisted later-dated version (removed via redundant_versions). #}
-        {# For a monotonic source the two orders agree (no-op). Falls back to updated_at order when #}
-        {# the model has no loaded_at watermark. When NOT collapsing, keep the run opener plus every #}
+        {# redundant versions, the survivor is the EARLIEST-LOADED row of the run — a later load #}
+        {# carrying identical content is dropped even if its updated_at is earlier, so it never #}
+        {# displaces, back-dates, or deletes the already-persisted version. For a monotonic source #}
+        {# earliest-loaded == earliest-updated_at (no-op). Falls back to updated_at order when the #}
+        {# model has no loaded_at watermark. When NOT collapsing, keep the run opener plus every #}
         {# already-persisted ('previous') row so an out-of-order arrival can never strand a version. #}
         changes_only as (
             {%- if collapse_redundant_versions %}
             select *
+            {%- if backdate_valid_from %},
+                min(coalesce(_scd2_prev_valid_from, {{ updated_at_col }})) over (partition by {{ unique_keys_csv }}, _run_id) as _scd2_run_start
+            {%- endif %}
             from compare_versions
             qualify row_number() over(
                 partition by {{ unique_keys_csv }}, _run_id
                 order by
-                {%- if run_survivor == 'earliest_updated' %}
-                    {{ updated_at_col }} asc{% if has_loaded_at %},
-                    {{ loaded_at_col }} asc    -- tiebreak only: the event clock leads{% endif %}
-                {%- else %}
                 {%- if has_loaded_at %}
                     {{ loaded_at_col }} asc,    -- earliest physical load wins, regardless of updated_at
                 {%- endif %}
                     {{ updated_at_col }} asc
-                {%- endif %}
             ) = 1
             {%- else %}
             select *
@@ -228,8 +239,9 @@ using (
             select
                 {{ dest_cols_csv }},
                 {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
-                {{ dbt_scd2_utils.get_valid_from_sql(unique_keys_csv, updated_at_col, created_at_col, deleted_at_col) }} as {{ valid_from_col }},
-                {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, updated_at_col, none, deleted_at_col) }} as {{ valid_to_col }},
+                {%- set window_col = '_scd2_run_start' if backdate_valid_from else updated_at_col %}
+                {{ dbt_scd2_utils.get_valid_from_sql(unique_keys_csv, window_col, created_at_col, deleted_at_col) }} as {{ valid_from_col }},
+                {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, window_col, none, deleted_at_col) }} as {{ valid_to_col }},
                 {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col, deleted_at_col) }} as {{ change_type_col }},
                 {%- if track_checksum %}
                 {{ dbt_scd2_utils.get_checksum_sql(checksum_columns) }} as {{ checksum_col }},

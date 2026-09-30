@@ -308,17 +308,16 @@ models:
 
   - name: late_event_scd2
     description: >
-      run_survivor: earliest_updated — the event clock dates the version. A genuinely
-      late-arriving event (updated_at 2024-03-10, loaded 2024-05-13) collides with an
-      on-time repeat observation of identical content (updated_at 2024-05-10, loaded
-      2024-05-10); the two collapse into one content run and the earliest-UPDATED row
-      must survive on both paths, dating the version at the event's occurrence while
-      keeping the survivor's own late _loaded_at for downstream cursors. Key 400 has
-      a successor after the collapsed run, 402 has the collapsed run as its current
-      version, 401 is a monotonic control. matches_expected_seed pins the exact
-      history; expected_1 and expected_2 are identical because iteration 2
-      (incremental over the same input) must be a no-op.
-      Run via ./test_scd2_sequence.sh 1 2 late_event_scd2.
+      backdate_valid_from: a late-arriving earlier-dated row corrects a version's _valid_from
+      without re-keying it. The collapsed run keeps its earliest-LOADED survivor, so the
+      survivor's _updated_at and _loaded_at (and any key a model hashes from its own event
+      time) never change, while _valid_from moves to the run's earliest event time and the
+      previous version's _valid_to follows. Iteration 2 lands late 03-10 rows incrementally
+      for key 400 (mid history) and 402 (current version); key 403 checks that an earlier
+      backdate carried only by the persisted _valid_from doesn't regress when a second late
+      row arrives; 401 is a monotonic control. Iteration 3 re-runs iteration 2's input and
+      must be a no-op (expected_3 == expected_2).
+      Run via ./test_scd2_sequence.sh 1 3 late_event_scd2.
     tests:
       - dbt_scd2_utils.one_current_per_key:
           arguments:

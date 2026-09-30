@@ -236,19 +236,19 @@
   {%- endif -%}
   {%- set collapse_redundant_versions = collapse_redundant_versions and update_all_previous_records -%}
 
-  {# Which row of a content run becomes the persisted version — and donates its updated_at to #}
-  {# _valid_from. 'earliest_loaded' (default): the first physical arrival wins, so a re-extract #}
-  {# or bulk reload re-delivering earlier-dated copies of content that already arrived can never #}
-  {# back-date a persisted version. 'earliest_updated': the event clock wins, so a genuinely #}
-  {# late-arriving event backdates the version to when it occurred — for event-sourced models #}
-  {# where business time is authoritative and the source never re-delivers earlier-dated copies #}
-  {# of already-seen content. Handed to BOTH paths so full refresh and merge keep the same row. #}
-  {%- set run_survivor = dbt_scd2_utils.get_config_value(config, 'run_survivor', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'run_survivor', default='earliest_loaded')) -%}
-  {%- if run_survivor not in ['earliest_loaded', 'earliest_updated'] -%}
-    {%- do exceptions.raise_compiler_error("dbt_scd2_utils: run_survivor must be 'earliest_loaded' or 'earliest_updated' — got '" ~ run_survivor ~ "'") -%}
+  {# Backdate a collapsed content run's _valid_from to its earliest event time. The survivor (the #}
+  {# earliest-loaded row, and with it every column including the model's own key) is unchanged, so #}
+  {# a late-arriving earlier-dated row corrects history without re-keying the version. Opt-in, and #}
+  {# only meaningful when redundant versions collapse. #}
+  {%- set backdate_valid_from = dbt_scd2_utils.get_config_value(config, 'backdate_valid_from', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'backdate_valid_from', default=false)) -%}
+  {%- if backdate_valid_from and not collapse_redundant_versions -%}
+    {{ exceptions.warn("dbt_scd2_utils: backdate_valid_from needs collapse_redundant_versions (and update_all_previous_records); ignored for " ~ this ~ ".") }}
   {%- endif -%}
+  {%- set backdate_valid_from = backdate_valid_from and collapse_redundant_versions -%}
 
   {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
+  {# A backdated run moves an already-persisted version's start, so the merge must be able to write it. #}
+  {%- if backdate_valid_from -%}{%- do merge_update_cols.append(valid_from_col) -%}{%- endif -%}
   {# Recomputing the change column for every record ensures accuracy. #}
   {# No updating all previous records results in multiple 'I' records. #}
   {%- if update_all_previous_records -%}
@@ -337,7 +337,7 @@
       'checksum_column': checksum_col,
       'checksum_columns': checksum_columns,
       'collapse_redundant_versions': collapse_redundant_versions,
-      'run_survivor': run_survivor
+      'backdate_valid_from': backdate_valid_from
   }  %}
 
   {%- if should_full_refresh -%}
