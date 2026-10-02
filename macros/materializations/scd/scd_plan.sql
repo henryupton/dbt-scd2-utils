@@ -54,6 +54,7 @@
   {%- set track_checksum = dbt_scd2_utils.get_config_value(config, 'track_checksum', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'track_checksum', default=false)) -%}
   {%- set checksum_col = dbt_scd2_utils.get_config_value(config, 'checksum_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'checksum_column', default='_CHECKSUM')) -%}
   {%- set checksum_exclude = dbt_scd2_utils.get_config_value(config, 'checksum_exclude', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'checksum_exclude', default=[])) -%}
+  {%- set restate_versions = dbt_scd2_utils.get_config_value(config, 'restate_versions', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'restate_versions', default=false)) -%}
 
   {%- set unique_key = config.get('unique_key') -%}
 
@@ -236,6 +237,13 @@
   {%- endif -%}
   {%- set collapse_redundant_versions = collapse_redundant_versions and update_all_previous_records -%}
 
+  {# restate_versions: an incoming row replaces the persisted row for the same version, so a #}
+  {# corrected upstream value reaches existing history. It needs the full prior history and the #}
+  {# collapse step, so a version that a restatement makes redundant is deleted as in a full refresh. #}
+  {%- if restate_versions and not collapse_redundant_versions -%}
+    {{ exceptions.raise_compiler_error("dbt_scd2_utils: restate_versions requires update_all_previous_records and collapse_redundant_versions (both default true) for " ~ this ~ ".") }}
+  {%- endif -%}
+
   {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
   {# Recomputing the change column for every record ensures accuracy. #}
   {# No updating all previous records results in multiple 'I' records. #}
@@ -324,7 +332,8 @@
       'track_checksum': track_checksum,
       'checksum_column': checksum_col,
       'checksum_columns': checksum_columns,
-      'collapse_redundant_versions': collapse_redundant_versions
+      'collapse_redundant_versions': collapse_redundant_versions,
+      'restate_versions': restate_versions
   }  %}
 
   {%- if should_full_refresh -%}

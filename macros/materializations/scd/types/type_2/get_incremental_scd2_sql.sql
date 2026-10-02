@@ -62,6 +62,7 @@
     {%- set track_checksum = arg_dict.get('track_checksum', false) -%}
     {%- set checksum_col = arg_dict.get('checksum_column') -%}
     {%- set checksum_columns = arg_dict.get('checksum_columns', []) -%}
+    {%- set restate_versions = arg_dict.get('restate_versions', false) -%}
 
     {# When collapsing redundant versions, the canonical row kept per content run is the           #}
     {# EARLIEST-LOADED one (by loaded_at), not the earliest updated_at. So a later load carrying     #}
@@ -79,6 +80,10 @@
     {%- set dest_cols_csv = dbt_scd2_utils.get_quoted_csv(dest_cols_names) -%}
     {%- set all_cols_names = dest_cols_names + audit_cols_names -%}
     {%- set all_cols_csv = dbt_scd2_utils.get_quoted_csv(all_cols_names) -%}
+    {# restate_versions: a matched version takes every column of its replacement except the merge key. #}
+    {%- if restate_versions -%}
+        {%- set merge_update_cols = dbt_scd2_utils.list_difference(all_cols_names, scd2_unique_key | map('upper') | list, case_insensitive=true) -%}
+    {%- endif -%}
 
 {# This section is where the magic happens: the MERGE statement #}
 merge into {{ target_relation }} AS DBT_INTERNAL_DEST
@@ -161,6 +166,9 @@ using (
             qualify row_number() over(
                 partition by _scd2_key
                 order by
+                {%- if restate_versions %}
+                    iff(_source = 'new', 0, 1),    -- restate_versions: the incoming row replaces the persisted one
+                {%- endif %}
                 {%- if has_loaded_at %}
                     {{ loaded_at_col }} asc,
                 {%- endif %}

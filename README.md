@@ -145,6 +145,7 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `search_optimization` | ❌ | `false` | (SCD2) `true` adds Snowflake Search Optimization (`EQUALITY`) on the key columns. Enterprise Edition; see [Key Matching](#key-matching--search-optimization). |
 | `search_optimization_columns` | ❌ | `unique_key` | (SCD2) Columns to build `search_optimization` on, when enabled. |
 | `full_refresh_strategy` | ❌ | `truncate` | How `--full-refresh` rebuilds an existing table: `truncate` keeps the table and swaps its rows when the schema is unchanged, `replace` always runs `create or replace table` (see [Full Refresh](#full-refresh)) |
+| `restate_versions` | ❌ | `false` | (SCD2) A re-emitted row replaces the persisted row for the same version, so a corrected value reaches existing history. For models fed by a re-derived source; see [Restating Versions](#restating-versions). |
 
 ### Audit Column Names
 
@@ -225,6 +226,27 @@ vars:
 |-----|---------|-----------|
 | `update_all_previous_records` | `true` | Re-evaluate every existing version of an affected key on each run, so out-of-order arrivals are slotted in correctly. Set to `false` only if data is guaranteed to arrive in chronological order — it is a performance optimisation that otherwise risks multiple `is_current` rows for a key. |
 | `collapse_redundant_versions` | `true` | When an out-of-order arrival has tracked columns identical to an existing version, the two collapse into one content run and the **earliest-loaded** row survives (by `loaded_at_column`, default `_loaded_at`; `updated_at` order when the model has no such column). A bulk reload that re-delivers an earlier-dated copy of content that already arrived therefore never back-dates the version or its predecessor's `valid_to`. With the default the now-redundant row is **deleted**, so an incremental run matches a full refresh, and the initial load applies the same survivor rule, so a full refresh followed by an incremental run over the same input is a no-op. Set to `false` to **keep** the redundant version instead (no deletes; the existing row is still correctly re-expired). Only takes effect when `update_all_previous_records` is also `true`. |
+
+### Restating Versions
+
+By default a version is written once: when the same `(unique_key, updated_at)` arrives again, the
+earliest-loaded row survives and the merge only re-expires it (`is_current`, `valid_to`,
+`change_type`). That protects history from a source that re-delivers rows, such as an Airbyte
+resync.
+
+A model built from a **re-derived** source, an intermediate that re-joins late-arriving data
+onto existing versions, needs the opposite: the re-emitted row is the corrected value and must
+replace the persisted one. Set `restate_versions: true` on that model:
+
+```sql
+{{ config(materialized='scd', unique_key=['user_id'], meta={'restate_versions': true}) }}
+```
+
+The incoming row then wins for its version, the merge rewrites every column of a matched version
+except the key, and a version the restatement makes redundant is deleted, so an incremental run
+lands the same table a full refresh would. Rows that are not re-emitted are untouched, and
+duplicates within one batch still keep the earliest-loaded copy. Requires
+`update_all_previous_records` and `collapse_redundant_versions` (both default `true`).
 
 ### Key Matching & Search Optimization
 
