@@ -9,16 +9,21 @@
     fingerprint_loaded_at_column (string):       row arrival column, default _loaded_at.
     fingerprint_exclude (list):                  columns never hashed, default [_batched_at, _written_at, _synthesised_at].
     fingerprint_exclude_scd_columns (bool):      also leave out the scd validity columns (is_current_column and
-                                                 valid_to_column), default true. A new version closing an old row then
+                                                 valid_to_column, resolved per model as the scd materialization
+                                                 resolves them), default true. A new version closing an old row then
                                                  reads appended rather than modified. The cost is that a logic change
                                                  which only moves validity reads unchanged; set false where scd2_join
                                                  consumers depend on those columns.
+    fingerprint_select_tag (string):             fallback selection for runtimes without selected_resources: every
+                                                 node carrying the tag is registered, default none.
 
   Per-model meta: fingerprint_loaded_at, fingerprint_exclude (added to the global list).
 
   The ledger is append-only: registration writes a `pending` row, the post-hook and the guard append the verdict
-  row, and the latest row per deploy and node is the one that counts. Nothing updates or deletes, so threads
-  finishing together never queue on a table lock.
+  row. Per deploy and node the latest real verdict counts; a `skipped` row stands only when the node recorded no
+  verdict in that deploy, and `pending` only when nothing else exists. A verdict is measured against the deploy's
+  snapshot, so it is cumulative over every step and retry of the deploy, and a later skip wrote nothing. Nothing
+  updates or deletes, so threads finishing together never queue on a table lock.
 #}
 
 {# A var as a bool on both engines. dbt-core's macro environment leaves `as_bool` as identity, so "false" would be truthy. #}
@@ -61,13 +66,28 @@
   {{ return(meta.get('fingerprint_loaded_at') or var('fingerprint_loaded_at_column', '_loaded_at')) }}
 {% endmacro %}
 
+{#
+  An scd audit column name for the node, resolved as scd_plan resolves it: the model's own override (meta, then
+  top-level config) first, then the dbt_scd2_utils package var, then the package default. The live `config` is
+  only trusted when it belongs to this node (the post-hook's render context); anywhere else the node's meta stands
+  in for it.
+#}
+{% macro fingerprint_scd_column(node, key, default) %}
+  {%- set fallback = dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), key, default=default) or default -%}
+  {%- set own_context = node is not none and model is defined and model is not none
+      and node.unique_id is defined and model.unique_id is defined and node.unique_id == model.unique_id -%}
+  {%- if own_context and config is defined and config is not none -%}
+    {{ return(dbt_scd2_utils.get_config_value(config, key, default=fallback) or fallback) }}
+  {%- endif -%}
+  {{ return(dbt_scd2_utils.fingerprint_node_meta(node).get(key) or fallback) }}
+{% endmacro %}
+
 {% macro fingerprint_excluded_columns(node) %}
-  {%- set pkg = var('dbt_scd2_utils', {}) -%}
   {%- set cols = [] -%}
   {%- for c in var('fingerprint_exclude', ['_batched_at', '_written_at', '_synthesised_at']) -%}{%- do cols.append(c) -%}{%- endfor -%}
   {%- if dbt_scd2_utils.fingerprint_flag('fingerprint_exclude_scd_columns', true) -%}
-    {%- do cols.append(dbt_scd2_utils.get_from_object(pkg, 'is_current_column', default='_is_current')) -%}
-    {%- do cols.append(dbt_scd2_utils.get_from_object(pkg, 'valid_to_column', default='_valid_to')) -%}
+    {%- do cols.append(dbt_scd2_utils.fingerprint_scd_column(node, 'is_current_column', '_is_current')) -%}
+    {%- do cols.append(dbt_scd2_utils.fingerprint_scd_column(node, 'valid_to_column', '_valid_to')) -%}
   {%- endif -%}
   {%- for c in dbt_scd2_utils.fingerprint_node_meta(node).get('fingerprint_exclude', []) or [] -%}{%- do cols.append(c) -%}{%- endfor -%}
   {{ return(cols | map('upper') | list) }}
@@ -77,9 +97,14 @@
   {{ return(['pending', 'new', 'modified', 'unhashable', 'error']) }}
 {% endmacro %}
 
-{# The row that counts for a deploy and node: the latest appended. Goes after the where clause. #}
+{#
+  The row that counts for a deploy and node: the latest real verdict; a `skipped` row only when the node recorded
+  no verdict in that deploy; `pending` only when nothing else exists. Goes after the where clause.
+#}
 {% macro fingerprint_latest_row() %}
-  {{ return(" qualify row_number() over (partition by deploy_id, node_id order by finished_at desc nulls last, registered_at desc) = 1") }}
+  {{ return(" qualify row_number() over (partition by deploy_id, node_id order by"
+      ~ " case verdict when 'pending' then 2 when 'skipped' then 1 else 0 end,"
+      ~ " finished_at desc nulls last, registered_at desc) = 1") }}
 {% endmacro %}
 
 {# database.schema.alias as the ledger records it, from a graph node or the model context. #}
@@ -223,22 +248,27 @@
 {#
   Object state without information_schema.tables (2 s per lookup): `show tables like` is metadata-only, and
   result_scan on it settles created_on against the snapshot in SQL. LIKE treats `_` as a wildcard, so the exact
-  name is re-checked. Returns {'found', 'kind', 'replaced', 'retention', 'row_timestamp', 'is_iceberg',
-  'is_dynamic'} with kind 'table', 'view' or none. row_timestamp is read here because
-  METADATA$ROW_LAST_COMMIT_TIME is an invalid identifier on a table without it, and a hook error fails the node.
+  name is re-checked. Returns {'found', 'kind', 'replaced', 'retention', 'expired', 'row_timestamp', 'is_iceberg',
+  'is_dynamic'} with kind 'table', 'view' or none. expired is true when the snapshot is older than the table's
+  Time Travel retention (a stable deploy_id re-run days later), where an `at()` read would fail the node.
+  row_timestamp is read here because METADATA$ROW_LAST_COMMIT_TIME is an invalid identifier on a table without it,
+  and a hook error fails the node.
 #}
 {% macro fingerprint_object_info(relation, snap) %}
   {%- set name_lit = dbt_scd2_utils.fingerprint_lit(relation.identifier) -%}
   {%- set in_schema = " in schema " ~ relation.database ~ "." ~ relation.schema -%}
   {%- set tables = run_query("show tables like " ~ name_lit ~ in_schema) -%}
   {%- if tables.rows | length > 0 -%}
+    {# SHOW TABLES reports retention_time as varchar. #}
     {%- set info = run_query(
         "select \"kind\", \"retention_time\", \"created_on\" > " ~ snap ~ " as replaced,"
-        ~ " \"row_timestamp\", \"is_iceberg\", \"is_dynamic\""
+        ~ " \"row_timestamp\", \"is_iceberg\", \"is_dynamic\","
+        ~ " " ~ snap ~ " < dateadd('day', -try_to_number(\"retention_time\"::varchar), current_timestamp()) as expired"
         ~ " from table(result_scan(last_query_id())) where upper(\"name\") = upper(" ~ name_lit ~ ")") -%}
     {%- if info.rows | length > 0 -%}
       {%- set r = info.rows[0] -%}
       {{ return({'found': true, 'kind': 'table', 'replaced': r[2], 'retention': r[1] | int,
+                 'expired': (r[6] | string | lower) == 'true',
                  'row_timestamp': (r[3] | string | upper) == 'ON',
                  'is_iceberg': (r[4] | string | upper) == 'Y',
                  'is_dynamic': (r[5] | string | upper) == 'Y'}) }}
@@ -249,10 +279,10 @@
   {%- for name in views.columns | map(attribute='name') -%}{%- do vidx.update({name | lower: loop.index0}) -%}{%- endfor -%}
   {%- for row in views.rows -%}
     {%- if (row[vidx['name']] | upper) == (relation.identifier | upper) -%}
-      {{ return({'found': true, 'kind': 'view', 'replaced': none, 'retention': none, 'row_timestamp': none, 'is_iceberg': false, 'is_dynamic': false}) }}
+      {{ return({'found': true, 'kind': 'view', 'replaced': none, 'retention': none, 'expired': false, 'row_timestamp': none, 'is_iceberg': false, 'is_dynamic': false}) }}
     {%- endif -%}
   {%- endfor -%}
-  {{ return({'found': false, 'kind': none, 'replaced': none, 'retention': none, 'row_timestamp': none, 'is_iceberg': false, 'is_dynamic': false}) }}
+  {{ return({'found': false, 'kind': none, 'replaced': none, 'retention': none, 'expired': false, 'row_timestamp': none, 'is_iceberg': false, 'is_dynamic': false}) }}
 {% endmacro %}
 
 {% macro fingerprint_ledger_ddl(node_rel, seg_rel) %}
@@ -282,10 +312,6 @@
       post_shape        varchar,
       checksum          varchar
     )") -%}
-  {# Additive upgrades for ledgers created by an earlier revision. #}
-  {%- do run_query("alter table " ~ node_rel ~ " add column if not exists pre_shape varchar") -%}
-  {%- do run_query("alter table " ~ node_rel ~ " add column if not exists post_shape varchar") -%}
-  {%- do run_query("alter table " ~ node_rel ~ " add column if not exists checksum varchar") -%}
   {%- do run_query("
     create table if not exists " ~ seg_rel ~ " (
       deploy_id   varchar,

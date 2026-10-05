@@ -3,6 +3,13 @@
 
     models:
       +post-hook: "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+    seeds:
+      +post-hook: "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+    snapshots:
+      +post-hook: "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+
+  Every resource type fingerprint_register() enrols needs it: a node whose post-hook never runs
+  stays `pending` and blocks every child.
 
   Compares the table as it stands now with the table as it stood at `snapshot_at`, read through
   Time Travel, and appends one of these to the ledger:
@@ -14,9 +21,11 @@
                 watermark hashes or counts differently
     unhashable  no loaded_at column on one side, a loaded_at column that is not a timestamp or date,
                 or no row timestamps on the table (ROW_TIMESTAMP off, which includes Iceberg)
-    error       relation missing, or no Time Travel (retention 0)
+    error       relation missing, no Time Travel (retention 0), or a snapshot older than the
+                table's Time Travel retention
 
-  Everything except unchanged, appended and skipped blocks a child's skip.
+  Everything except unchanged, appended and skipped blocks a child's skip. A node skipped earlier
+  in the deploy and built in a later step still records its verdict, which then outranks the skip.
 
   METADATA$ROW_LAST_COMMIT_TIME names the rows this build wrote. When they are a subset of the
   table only their loaded_at months are hashed; when every row was rewritten (truncate + insert,
@@ -50,18 +59,14 @@
   {%- set node_id = model.unique_id -%}
   {%- set key = " where deploy_id = " ~ dbt_scd2_utils.fingerprint_lit(deploy_id) ~ " and node_id = " ~ dbt_scd2_utils.fingerprint_lit(node_id) -%}
 
-  {%- set reg = run_query("select to_char(snapshot_at, 'YYYY-MM-DD HH24:MI:SS.FF9 TZHTZM'), verdict, loaded_at_column, pre_shape from " ~ node_rel ~ key ~ dbt_scd2_utils.fingerprint_latest_row()) -%}
+  {%- set reg = run_query("select to_char(snapshot_at, 'YYYY-MM-DD HH24:MI:SS.FF9 TZHTZM'), loaded_at_column, pre_shape from " ~ node_rel ~ key ~ dbt_scd2_utils.fingerprint_latest_row()) -%}
   {%- if reg.rows | length == 0 -%}
     {%- do log("fingerprint: " ~ relation ~ " is not registered for deploy " ~ deploy_id, info=true) -%}
     {{ return('select 1 where false') }}
   {%- endif -%}
   {%- set snapshot_at = reg.rows[0][0] -%}
-  {%- set prior_verdict = reg.rows[0][1] -%}
-  {%- set loaded_at_col = reg.rows[0][2] -%}
-  {%- set pre_shape = reg.rows[0][3] -%}
-  {%- if prior_verdict == 'skipped' -%}
-    {{ return('select 1 where false') }}
-  {%- endif -%}
+  {%- set loaded_at_col = reg.rows[0][1] -%}
+  {%- set pre_shape = reg.rows[0][2] -%}
 
   {%- set snap = dbt_scd2_utils.fingerprint_ts_lit(snapshot_at) -%}
   {%- set tt = " at(timestamp => " ~ snap ~ ")" -%}
@@ -81,6 +86,9 @@
     {%- do out.update({'verdict': 'new', 'detail': 'object created after snapshot', 'replaced': true, 'post_rows': n | int}) -%}
   {%- elif info.retention == 0 -%}
     {%- do out.update({'verdict': 'error', 'detail': 'no Time Travel: data_retention_time_in_days is 0', 'replaced': false}) -%}
+  {%- elif info.expired -%}
+    {%- do out.update({'verdict': 'error', 'replaced': false,
+                       'detail': "snapshot_at is older than the table's Time Travel retention (" ~ info.retention ~ " day(s))"}) -%}
   {%- elif not info.row_timestamp -%}
     {# METADATA$ROW_LAST_COMMIT_TIME is an invalid identifier without ROW_TIMESTAMP; recorded, not raised. #}
     {%- do out.update({'verdict': 'unhashable', 'replaced': false,
@@ -88,25 +96,36 @@
   {%- else -%}
     {%- do out.update({'replaced': false}) -%}
 
-    {# 2. Shape: a column added, removed or retyped on a surviving object is a change the hash cannot see. #}
+    {#
+      2. Shape: a column added, removed or retyped on a surviving object is a change the hash cannot see. The
+      registered shape catches all three. Without one on either side, the column names at the snapshot (read
+      through Time Travel) stand in, so an added or dropped column still reads modified; a retype alone does not.
+    #}
     {%- set shape_res = run_query("show columns in table " ~ relation) -%}
     {%- set post_shape = dbt_scd2_utils.fingerprint_shape_from_show(shape_res).get(relation.identifier | upper) -%}
     {%- do out.update({'post_shape': post_shape}) -%}
+    {%- set now_cols = dbt_scd2_utils.fingerprint_columns_from_show(shape_res) -%}
+    {%- set now_upper = now_cols | map('upper') | list -%}
+    {%- set pre_cols = run_query("select * from " ~ relation ~ tt ~ " where 1 = 0").columns | map(attribute='name') | map('upper') | list -%}
 
     {%- if pre_shape is not none and post_shape is not none and pre_shape != post_shape -%}
-      {%- set pre_cols = pre_shape.split(',') -%}
-      {%- set post_cols = post_shape.split(',') -%}
+      {%- set pre_typed = pre_shape.split(',') -%}
+      {%- set post_typed = post_shape.split(',') -%}
       {%- set added = [] -%}
       {%- set removed = [] -%}
-      {%- for c in post_cols -%}{%- if c not in pre_cols -%}{%- do added.append(c) -%}{%- endif -%}{%- endfor -%}
-      {%- for c in pre_cols -%}{%- if c not in post_cols -%}{%- do removed.append(c) -%}{%- endif -%}{%- endfor -%}
+      {%- for c in post_typed -%}{%- if c not in pre_typed -%}{%- do added.append(c) -%}{%- endif -%}{%- endfor -%}
+      {%- for c in pre_typed -%}{%- if c not in post_typed -%}{%- do removed.append(c) -%}{%- endif -%}{%- endfor -%}
       {%- do out.update({'verdict': 'modified', 'detail': 'shape changed; now has ' ~ (added | join(' ') or 'nothing new') ~ '; lost ' ~ (removed | join(' ') or 'nothing')}) -%}
+    {%- elif (pre_shape is none or post_shape is none) and (pre_cols | sort | list) != (now_upper | sort | list) -%}
+      {%- set added = [] -%}
+      {%- set removed = [] -%}
+      {%- for c in now_upper -%}{%- if c not in pre_cols -%}{%- do added.append(c) -%}{%- endif -%}{%- endfor -%}
+      {%- for c in pre_cols -%}{%- if c not in now_upper -%}{%- do removed.append(c) -%}{%- endif -%}{%- endfor -%}
+      {%- do out.update({'verdict': 'modified', 'detail': 'column names changed (no registered shape to compare); now has ' ~ (added | join(' ') or 'nothing new') ~ '; lost ' ~ (removed | join(' ') or 'nothing')}) -%}
     {%- else -%}
 
       {# 3. Columns common to both sides, minus exclusions, quoted as stored. #}
-      {%- set now_cols = dbt_scd2_utils.fingerprint_columns_from_show(shape_res) -%}
       {%- set col_types = dbt_scd2_utils.fingerprint_column_types_from_show(shape_res) -%}
-      {%- set pre_cols = run_query("select * from " ~ relation ~ tt ~ " where 1 = 0").columns | map(attribute='name') | map('upper') | list -%}
       {%- set excluded = dbt_scd2_utils.fingerprint_excluded_columns(model) -%}
       {%- set loaded_upper = loaded_at_col | upper -%}
       {%- set hash_cols = [] -%}
