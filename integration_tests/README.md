@@ -33,7 +33,9 @@ loaded-at column, and a table kept at retention 0. Each parent has a child built
 
 - **`fp_ledger`** - view over this deploy's rows in the `fingerprint_deploy_node` ledger; the
   `matches_expected_seed` test compares it to `seeds/fingerprint/fp_expected_<n>.csv`, keyed by
-  the `fp_iteration` var.
+  the `fp_iteration` var. Enabled only with the `fingerprint` var on, as are the two singular tests
+  below: the ledger table exists only once a fingerprint run has created it, so a plain `dbt build`
+  on a fresh schema leaves all three out.
 - **`fp_child_late`** - disabled unless `fp_enable_late_child` is set, so it can appear mid-sequence.
 
 The `fp_edp` group (scenarios 33 to 38) holds the project's own shapes:
@@ -53,11 +55,12 @@ The `fp_edp` group (scenarios 33 to 38) holds the project's own shapes:
 The guard also refuses to skip a node whose own source checksum differs from its last fingerprinted
 build of the same relation. Fixture model SQL is steered by vars, not edits, so guarded checksums never
 move between scenarios except where a scenario means them to: the runner rewrites two seed CSVs and one
-guarded model (`fp_edge_child_multi`) and restores them when it exits. Every group's first scenario
-builds each guarded child, so the expected verdicts hold from the first run on a fresh schema and on
-every rerun.
+guarded model (`fp_edge_child_multi`, in scenarios 46 and 54) and restores them when it exits; a variant
+a killed run left behind is recognised at start and the committed copy restored from git. Every group's
+first scenario builds each guarded child, so the expected verdicts hold from the first run on a fresh
+schema and on every rerun.
 
-The `fp_edge` group (scenarios 39 to 53) holds the guard's remaining branches and the hooks' edge cases:
+The `fp_edge` group (scenarios 39 to 57) holds the guard's remaining branches and the hooks' edge cases:
 
 - **`fp_edge_parent_a`**, **`fp_edge_parent_b`** - two merge parents with a value flip each; `b` can also be
   made to fail, so it stays `pending` for the rest of its deploy.
@@ -84,7 +87,18 @@ Two singular tests ride along with every group: `fp_one_pending_per_node` (regis
 across the steps and retries of one deploy) and `fp_skipped_left_alone` (no row of a skipped node's table
 was committed at or after the deploy's snapshot). Scenarios 52 and 53 fail a parent on purpose: the
 children then build on its `pending` verdict, and a retry under the same deploy id settles it against the
-original snapshot.
+original snapshot. Scenarios 54 and 55 decide `fp_edge_child_multi` twice in one deploy:
+
+- **54** - built in one step (its own SQL changed) and skipped in the next; its `new` verdict still counts
+  over the skip, so `fp_edge_grandchild` builds.
+- **55** - skipped in one step and rebuilt in the next, where a full refresh replaces `fp_edge_parent_a`
+  with the same rows (`new`, blocking); the rebuild records `new`, so `fp_edge_grandchild` builds. The
+  parent's other child, `fp_edge_child_of_eph`, rebuilds in the same step: a child left behind a blocking
+  parent verdict from another deploy builds at its next selection, which would break a rerun from 46.
+
+Scenarios 56 and 57 replace `fp_edge_parent_a` in a deploy that selects none of its guarded children, then
+run the whole group: the parent reads `unchanged` there, and its children still build on the other
+deploy's `new`, which arrived after their last build.
 
 The source rows come from `fp_customer_rows()` (`macros/fp_fixture_sql.sql`), steered by vars:
 `fp_source` picks a seed, `fp_upper_email` / `fp_null_email_customer` change values below the
@@ -163,7 +177,8 @@ dbt build --select +models/scd_materialization/
 
 #### Content Fingerprint
 ```bash
-# Fifty-three ordered, stateful scenarios; each builds a selection with fingerprint: true and
+# Fifty-seven ordered, stateful scenarios; each builds a selection with fingerprint: true (bar
+# scenario 50's first step, built with it off on purpose) and
 # asserts every fixture's verdict (new / unchanged / appended / modified / unhashable / error /
 # skipped) against fp_expected_<n>. Weighted towards false negatives: genuine changes that must
 # not be waved through, and guarded children that must build.
@@ -175,8 +190,9 @@ dbt build --select +models/scd_materialization/
 # Scenario 12 deletes fixture rows inside the build with a pre-hook (fp_delete_customer var).
 ```
 
-Fixture tables and seeds get `data_retention_time_in_days = 1` from a post-hook, because the
-fingerprint reads the pre-build table through Time Travel and dev databases here have retention 0.
+Fixture tables and the seeds under `seeds/fingerprint` get `data_retention_time_in_days = 1` from a
+post-hook, because the fingerprint reads the pre-build table through Time Travel and dev databases here
+have retention 0.
 
 #### Source Macro Tests
 ```bash

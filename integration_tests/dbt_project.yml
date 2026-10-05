@@ -30,9 +30,10 @@ flags:
 seeds:
   dbt_scd2_utils_integration_tests:
     +quote_columns: false
-    +post-hook:
-      - "alter table {{ this }} set data_retention_time_in_days = 1"
-      - "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+    fingerprint:
+      +post-hook:
+        - "alter table {{ this }} set data_retention_time_in_days = 1"
+        - "{{ dbt_scd2_utils.fingerprint_post(this) }}"
 
 models:
   dbt_scd2_utils_integration_tests:

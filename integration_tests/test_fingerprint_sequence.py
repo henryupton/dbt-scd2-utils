@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Content fingerprint scenario suite.
 
-Drives the fingerprint fixtures (models/fingerprint*, seeds/fingerprint) through ordered
+Drives the fingerprint fixtures (models/fingerprint*, seeds/fingerprint) through 57 ordered
 scenarios. After each, the matches_expected_seed test on fp_ledger asserts the verdict recorded
 for every selected fixture against seeds/fingerprint/fp_expected_<n>.csv. Each scenario is its
 own deploy id, so the ledger accumulates and reruns never collide. Scenarios are stateful and
-run in order; --only / --from re-run a slice against whatever state the tables are in.
+run in order; --only / --from re-run a slice against whatever state the tables are in. fp_ledger
+and the two singular tests are enabled only with the fingerprint var on, which the runner sets on
+every step except scenario 50's first (built with the fingerprint off on purpose).
 
 The suite is weighted towards false negatives: every way a genuine change could be waved
 through as unchanged or appended, and every way a guarded child could be skipped when it must
@@ -13,11 +15,17 @@ build. Scenario 12 deletes fixture rows inside the build with a pre-hook (fp_del
 a change made before the build's snapshot belongs to no deploy and is correctly invisible.
 Scenarios 33 to 38 are the project's own shapes: a versioned dim, a batch-stamped staging merge
 that starts empty, a registry seed with no loaded-at column, and a seed whose CSV the runner
-rewrites mid-sequence (FILE_VARIANTS); the originals are restored when the runner exits.
-Scenarios 39 to 53 are the guard's remaining branches (ephemeral, multi-parent, transitive,
+rewrites mid-sequence (FILE_VARIANTS); the originals are restored when the runner exits, and a
+variant a killed run left behind is replaced by the committed copy from git.
+Scenarios 39 to 57 are the guard's remaining branches (ephemeral, multi-parent, transitive,
 checksum, no baseline, pending, retry) and the hooks' edge cases (no row timestamps, numeric,
 geography and variant columns, quoted identifiers, null and non-tz loaded-at, the scd validity
 blind spot). A step marked expect_fail must exit non-zero: it leaves a parent pending on purpose.
+Scenario 54 builds a guarded child in one step and skips it in the next; its new verdict still counts.
+Scenario 55 skips a guarded child in one step and rebuilds it in the next, once a full refresh has
+replaced a parent; the rebuild records new.
+Scenarios 56 and 57 replace a parent in a deploy that builds none of its guarded children; the next
+deploy builds them on that verdict, though the parent reads unchanged there.
 
 Usage:
     ./test_fingerprint_sequence.py [--profile default] [--target dev] [--dbt /path/to/dbt]
@@ -43,10 +51,28 @@ EDGE = "tag:fp_edge"
 
 # Files the runner rewrites mid-sequence: seeds so a reload carries changed content, one guarded model so
 # its checksum moves while its parents stay put. A variant stays in place for the scenarios that follow;
-# the committed originals are restored when the runner exits.
+# the committed originals are restored when the runner exits. A variant left behind by a killed run is
+# recognised at start and the committed copy is taken from git instead.
 SEED_LIVE = "seeds/fingerprint/fp_seed_live.csv"
 REGISTRY = "seeds/fingerprint/fp_registry.csv"
 CHILD_MULTI = "models/fingerprint/fp_edge_child_multi.sql"
+CHILD_MULTI_HEAD = (
+    "{{\n"
+    "    config(\n"
+    "        materialized='guarded_table',\n"
+    "        tags=['fp_edge']\n"
+    "    )\n"
+    "}}\n"
+    "\n"
+    "{# Two parents: one blocking verdict on either side builds it. The runner rewrites this file in two #}\n"
+    "{# scenarios so its checksum moves while both parents stay unchanged. #}\n"
+)
+CHILD_MULTI_SELECT = (
+    "select a.customer_id, a.email, b.status\n"
+    "from {{ ref('fp_edge_parent_a') }} a\n"
+    "join {{ ref('fp_edge_parent_b') }} b on a.customer_id = b.customer_id\n"
+)
+CHILD_MULTI_CHANGE = "{# Rewritten by the runner: this comment is the change. #}\n"
 FILE_VARIANTS = {
     SEED_LIVE: {
         # customer 3 flips INACTIVE -> ACTIVE with the same timestamps
@@ -72,20 +98,12 @@ FILE_VARIANTS = {
     },
     CHILD_MULTI: {
         # the same model with one more comment line: same output, different checksum
-        "changed": (
-            "{{\n"
-            "    config(\n"
-            "        materialized='guarded_table',\n"
-            "        tags=['fp_edge']\n"
-            "    )\n"
-            "}}\n"
-            "\n"
-            "{# Two parents: one blocking verdict on either side builds it. The runner rewrites this file in one #}\n"
-            "{# scenario so its checksum moves while both parents stay unchanged. #}\n"
-            "{# Rewritten by the runner: this comment is the change. #}\n"
-            "select a.customer_id, a.email, b.status\n"
-            "from {{ ref('fp_edge_parent_a') }} a\n"
-            "join {{ ref('fp_edge_parent_b') }} b on a.customer_id = b.customer_id\n"
+        "changed": CHILD_MULTI_HEAD + CHILD_MULTI_CHANGE + CHILD_MULTI_SELECT,
+        # and with one more again, so the checksum moves a second time
+        "changed_again": (
+            CHILD_MULTI_HEAD + CHILD_MULTI_CHANGE
+            + "{# Rewritten again: a second checksum for the same output. #}\n"
+            + CHILD_MULTI_SELECT
         ),
     },
 }
@@ -214,12 +232,49 @@ SCENARIOS = [
              dict(select="fp_edge_parent_a fp_edge_parent_b", vars=EDGE_45),
              dict(select=EDGE, vars=EDGE_45),
          ]),
+    # One guarded child decided twice in a deploy: its real verdict counts over the skip, whichever came first.
+    dict(id=54, desc="two-step: a guarded child built in A (own SQL changed) and skipped in B keeps its verdict; "
+                     "its child builds", files={CHILD_MULTI: "changed_again"}, steps=[
+        dict(select="fp_edge_parent_a fp_edge_parent_b fp_edge_child_multi", vars=EDGE_45),
+        dict(select="fp_edge_child_multi fp_edge_grandchild fp_ledger", vars=EDGE_45),
+    ]),
+    # B's full refresh replaces fp_edge_parent_a with the same rows: it reads new and blocks without leaving the data
+    # out of step with EDGE_45. Its other child rebuilds alongside, or the guard would build it at its next selection
+    # on that blocking verdict and a rerun from 46 would fail.
+    dict(id=55, desc="two-step: a guarded child skipped in A and rebuilt in B (a parent replaced) records its verdict; "
+                     "its child builds", steps=[
+        dict(select="fp_edge_parent_a fp_edge_parent_b fp_edge_child_multi fp_edge_grandchild", vars=EDGE_45),
+        dict(select="fp_edge_parent_a fp_edge_child_of_eph fp_edge_child_multi fp_edge_grandchild fp_ledger",
+             flags=["--full-refresh"], vars=EDGE_45),
+    ]),
+    # A parent's verdict in another deploy, recorded after a child last built, still reaches the child: the parent is
+    # replaced in a deploy that selects none of its guarded children, and reads unchanged in the next one.
+    dict(id=56, desc="a parent replaced (new) in a deploy that builds none of its guarded children",
+         select="fp_edge_parent_a fp_ledger", flags=["--full-refresh"], vars=EDGE_45),
+    dict(id=57, desc="the next deploy builds the children that replace never reached, though the parent reads unchanged",
+         select=EDGE, vars=EDGE_45),
 ]
 
 
 def run(cmd: list[str], *, capture: bool = False) -> subprocess.CompletedProcess:
     print("+", " ".join(cmd), flush=True)
     return subprocess.run(cmd, text=True, capture_output=capture)
+
+
+def _original_text(here: Path, path: str) -> str:
+    """The text to restore: the committed copy when the working tree holds a variant a killed run left behind."""
+    text = (here / path).read_text()
+    if text not in FILE_VARIANTS[path].values():
+        return text
+    try:
+        committed = subprocess.run(["git", "show", f"HEAD:./{path}"], cwd=here, text=True, capture_output=True,
+                                   check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        print(f"[fingerprint] {path} holds a runner variant and git cannot supply the committed copy; left as is",
+              flush=True)
+        return text
+    print(f"[fingerprint] {path} holds a variant a previous run left behind; restoring the committed copy", flush=True)
+    return committed
 
 
 def main() -> int:
@@ -244,13 +299,7 @@ def main() -> int:
     if args.from_id:
         chosen = [s for s in chosen if s["id"] >= args.from_id]
 
-    if not args.no_seed:
-        print(f"[fingerprint] run tag {run_tag}; seeding fixtures")
-        if run([args.dbt, "seed", "--select", "path:seeds/fingerprint", "--full-refresh", *common]).returncode != 0:
-            print("[fingerprint] FAIL: seeding")
-            return 1
-
-    originals = {path: (here / path).read_text() for path in FILE_VARIANTS}
+    originals = {path: _original_text(here, path) for path in FILE_VARIANTS}
 
     def restore_files() -> None:
         for path, text in originals.items():
@@ -258,7 +307,15 @@ def main() -> int:
                 (here / path).write_text(text)
                 print(f"[fingerprint] restored {path}", flush=True)
 
+    # Put back a variant a killed run left behind before the seed load reads it, and again on exit.
+    restore_files()
     atexit.register(restore_files)
+
+    if not args.no_seed:
+        print(f"[fingerprint] run tag {run_tag}; seeding fixtures")
+        if run([args.dbt, "seed", "--select", "path:seeds/fingerprint", "--full-refresh", *common]).returncode != 0:
+            print("[fingerprint] FAIL: seeding")
+            return 1
 
     results: list[tuple[int, str, bool]] = []
     for sc in chosen:
@@ -297,10 +354,11 @@ def main() -> int:
         results.append((sid, sc["desc"], ok))
 
         if (args.show or not ok) and last_vars is not None:
+            # fp_ledger is enabled only with the fingerprint var on, and a step may have switched it off.
             run([args.dbt, "show", "--inline",
                  "select node_name, verdict, detail, pre_rows, post_rows, appended_rows, touched_rows, "
                  "touched_old_rows, buckets_hashed, buckets_changed from {{ ref('fp_ledger') }} order by node_name",
-                 "--vars", json.dumps(last_vars), "--limit", "40", *common])
+                 "--vars", json.dumps({**last_vars, "fingerprint": True}), "--limit", "40", *common])
 
     print("\n[fingerprint] summary")
     failed = 0

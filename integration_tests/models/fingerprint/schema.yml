@@ -61,7 +61,7 @@ models:
   - name: fp_edge_child_of_eph
     description: Guarded child whose only parent is ephemeral; skips or builds on fp_edge_parent_a's verdict.
   - name: fp_edge_child_multi
-    description: Guarded child of two parents; one blocking verdict builds it. The runner rewrites this file once so its checksum moves.
+    description: Guarded child of two parents; one blocking verdict builds it. The runner rewrites this file in scenarios 46 and 54 so its checksum moves.
   - name: fp_edge_grandchild
     description: Guarded child of fp_edge_child_multi; skips when its parent was skipped, builds when its parent was built.
   - name: fp_edge_adopted

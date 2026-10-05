@@ -1,9 +1,12 @@
 {{
     config(
         materialized='view',
+        enabled=(var('fingerprint', false) | string | lower) in ['true', '1'],
         tags=['fingerprint', 'fp_overwrite', 'fp_evolve', 'fp_guard', 'fp_late', 'fp_edp', 'fp_edge']
     )
 }}
+
+{# Enabled only with the fingerprint var on: the ledger table it reads exists once a fingerprint run has created it. #}
 
 -- depends_on: {{ ref('fp_dim_scd2') }}
 -- depends_on: {{ ref('fp_dim_scd1') }}

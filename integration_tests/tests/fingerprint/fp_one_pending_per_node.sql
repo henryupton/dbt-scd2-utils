@@ -1,5 +1,6 @@
 {{
     config(
+        enabled=(var('fingerprint', false) | string | lower) in ['true', '1'],
         tags=['fingerprint', 'fp_overwrite', 'fp_evolve', 'fp_guard', 'fp_late', 'fp_edp', 'fp_edge']
     )
 }}
