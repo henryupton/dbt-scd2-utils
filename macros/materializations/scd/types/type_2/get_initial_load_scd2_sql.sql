@@ -50,7 +50,7 @@
     {# of a content run survives, or a full refresh and the incremental runs that follow it keep     #}
     {# different versions of the same history.                                                       #}
     {%- set collapse_redundant_versions = arg_dict.get('collapse_redundant_versions', true) -%}
-    {%- set backdate_valid_from = arg_dict.get('backdate_valid_from', false) -%}
+    {%- set start_at_earliest_updated = arg_dict.get('collapsed_valid_from', 'earliest_loaded') == 'earliest_updated' -%}
 
     {# Define our audit columns #}
     {%- set is_current_col = arg_dict.get('is_current_column') -%}
@@ -121,7 +121,7 @@ compare_versions as (
 changes_only as (
     {%- if collapse_redundant_versions %}
     select *
-    {%- if backdate_valid_from %},
+    {%- if start_at_earliest_updated %},
         min({{ updated_at_col }}) over (partition by {{ unique_keys_csv }}, _run_id) as _scd2_run_start
     {%- endif %}
     from compare_versions
@@ -147,7 +147,7 @@ select
 
   {# Add SCD2 audit columns using reusable macros #}
   {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
-  {%- set window_col = '_scd2_run_start' if backdate_valid_from else updated_at_col %}
+  {%- set window_col = '_scd2_run_start' if start_at_earliest_updated else updated_at_col %}
   {{ dbt_scd2_utils.get_valid_from_sql(unique_keys_csv, window_col, created_at_col, deleted_at_col) }} as {{ valid_from_col }},
   {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, window_col, none, deleted_at_col) }} as {{ valid_to_col }},
   {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col, deleted_at_col) }} as {{ change_type_col }}

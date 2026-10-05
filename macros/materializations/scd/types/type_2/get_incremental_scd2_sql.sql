@@ -53,7 +53,7 @@
     {%- set deleted_at_col = arg_dict.get('deleted_at_column') -%}
     {%- set update_all_previous_records = arg_dict['update_all_previous_records'] -%}
     {%- set collapse_redundant_versions = arg_dict.get('collapse_redundant_versions', true) -%}
-    {%- set backdate_valid_from = arg_dict.get('backdate_valid_from', false) -%}
+    {%- set start_at_earliest_updated = arg_dict.get('collapsed_valid_from', 'earliest_loaded') == 'earliest_updated' -%}
     {# true -> equal_null (null-safe, default), false -> plain = (prune/SOS-eligible). #}
     {%- set key_match_null_safe = arg_dict.get('key_match_null_safe', true) -%}
     {%- set track_previous_version = arg_dict.get('track_previous_version', false) -%}
@@ -90,7 +90,7 @@ using (
             select
                 {{ dest_cols_csv }},
                 'new' as _source,
-                {%- if backdate_valid_from %}
+                {%- if start_at_earliest_updated %}
                 cast(null as timestamp_tz) as _scd2_prev_valid_from,
                 {%- endif %}
                 {{ dbt_utils.generate_surrogate_key(scd2_unique_key) }} as _scd2_key,
@@ -104,11 +104,23 @@ using (
             select
                 {{ dbt_scd2_utils.get_quoted_csv(dest_cols_names, 'p.') }},
                 'previous' as _source,
-                {%- if backdate_valid_from %}
-                {# A persisted version's start may already sit before its survivor's updated_at (an earlier #}
-                {# backdate whose source row was collapsed away), so it must feed the run minimum or the start #}
-                {# regresses. A first version's start can come from created_at, so it is not carried. #}
-                iff(p.{{ change_type_col }} = 'I', null, p.{{ valid_from_col }}) as _scd2_prev_valid_from,
+                {%- if start_at_earliest_updated %}
+                {# A persisted start may sit before its survivor's updated_at (an earlier correction whose row #}
+                {# collapsed away), so it feeds the run minimum or regresses. Only a key's first row can take #}
+                {# its start from created_at / deleted_at instead, so that row's start is not carried. #}
+                {%- set start_source_cols = [] -%}
+                {%- if deleted_at_col is not none %}{% do start_source_cols.append('p.' ~ deleted_at_col) %}{% endif -%}
+                {%- if created_at_col is not none %}{% do start_source_cols.append('p.' ~ created_at_col) %}{% endif -%}
+                {%- if start_source_cols %}
+                iff(
+                    p.{{ updated_at_col }} = min(p.{{ updated_at_col }}) over (partition by {{ dbt_scd2_utils.prefix_array_elements(unique_key, 'p.') | join(', ') }})
+                    and coalesce({{ start_source_cols | join(', ') }}) is not null,
+                    null,
+                    p.{{ valid_from_col }}
+                ) as _scd2_prev_valid_from,
+                {%- else %}
+                p.{{ valid_from_col }} as _scd2_prev_valid_from,
+                {%- endif %}
                 {%- endif %}
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd2_unique_key, 'p.')) }} as _scd2_key,
                 {{ dbt_utils.generate_surrogate_key(dbt_scd2_utils.prefix_array_elements(scd_check_columns, 'p.')) }} as _scd2_hash,
@@ -144,7 +156,7 @@ using (
                 _source,
                 _scd2_key,
                 _scd2_hash,
-                {%- if backdate_valid_from %}
+                {%- if start_at_earliest_updated %}
                 _scd2_prev_valid_from,
                 {%- endif %}
             from new_records
@@ -158,7 +170,7 @@ using (
                 _source,
                 _scd2_key,
                 _scd2_hash,
-                {%- if backdate_valid_from %}
+                {%- if start_at_earliest_updated %}
                 _scd2_prev_valid_from,
                 {%- endif %}
             from previous_record
@@ -212,7 +224,7 @@ using (
         changes_only as (
             {%- if collapse_redundant_versions %}
             select *
-            {%- if backdate_valid_from %},
+            {%- if start_at_earliest_updated %},
                 min(coalesce(_scd2_prev_valid_from, {{ updated_at_col }})) over (partition by {{ unique_keys_csv }}, _run_id) as _scd2_run_start
             {%- endif %}
             from compare_versions
@@ -239,7 +251,7 @@ using (
             select
                 {{ dest_cols_csv }},
                 {{ dbt_scd2_utils.get_is_current_sql(unique_keys_csv, updated_at_col) }} as {{ is_current_col }},
-                {%- set window_col = '_scd2_run_start' if backdate_valid_from else updated_at_col %}
+                {%- set window_col = '_scd2_run_start' if start_at_earliest_updated else updated_at_col %}
                 {{ dbt_scd2_utils.get_valid_from_sql(unique_keys_csv, window_col, created_at_col, deleted_at_col) }} as {{ valid_from_col }},
                 {{ dbt_scd2_utils.get_valid_to_sql(unique_keys_csv, window_col, none, deleted_at_col) }} as {{ valid_to_col }},
                 {{ dbt_scd2_utils.get_change_type_sql(unique_keys_csv, updated_at_col, deleted_at_col) }} as {{ change_type_col }},

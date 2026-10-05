@@ -10,3 +10,5 @@ customer_id,customer_name,email,status,deleted_at,_created_at,_updated_at,_loade
 403,Second Late Arrival,second@example.com,TRIAL,,2024-01-01 10:00:00+0000,2024-01-01 10:00:00+0000,2024-01-01 10:00:00+0000
 403,Second Late Arrival,second@example.com,ACTIVE,,2024-01-01 10:00:00+0000,2024-03-10 10:00:00+0000,2024-05-20 10:00:00+0000
 403,Second Late Arrival,second@example.com,ACTIVE,,2024-01-01 10:00:00+0000,2024-05-10 10:00:00+0000,2024-05-10 10:00:00+0000
+404,First Version Backdate,firstback@example.com,ACTIVE,,,2024-05-10 10:00:00+0000,2024-05-10 10:00:00+0000
+404,First Version Backdate,firstback@example.com,ACTIVE,,,2024-03-10 10:00:00+0000,2024-05-20 10:00:00+0000

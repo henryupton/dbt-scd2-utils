@@ -7,13 +7,13 @@
                 'exclude': ['_written_at', '_created_at', '_loaded_at']
             },
             'deleted_at_column': 'deleted_at',
-            'backdate_valid_from': true
+            'collapsed_valid_from': 'earliest_updated'
         }
     )
 }}
 
 {#
-    backdate_valid_from: a late-arriving earlier-dated row corrects a version's _valid_from
+    collapsed_valid_from: earliest_updated - a late-arriving earlier-dated row corrects a version's _valid_from
     without re-keying it.
 
     When identical-content rows collapse into one version, the survivor is still the
@@ -26,7 +26,9 @@
     400 (mid history) and 402 (current version): each ACTIVE version keeps its 05-10 survivor
     and moves _valid_from to 03-10. Key 403's batch holds only a second late row (04-01), so
     its earlier 03-10 start is visible only through the persisted _valid_from, and it must
-    not regress to 04-01. Key 401 is a monotonic control. Iteration 3 re-runs iteration 2's
+    not regress to 04-01. Key 404 has no _created_at, so its first version's start is the run's
+    start: iteration 1 backdates it to 03-10, and iteration 2's CANCELLED row must not undo that.
+    Key 401 is a monotonic control. Iteration 3 re-runs iteration 2's
     input and must be a no-op. Run via ./test_scd2_sequence.sh 1 3 late_event_scd2
 #}
 

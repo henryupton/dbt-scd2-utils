@@ -308,7 +308,7 @@ models:
 
   - name: late_event_scd2
     description: >
-      backdate_valid_from: a late-arriving earlier-dated row corrects a version's _valid_from
+      collapsed_valid_from: earliest_updated - a late-arriving earlier-dated row corrects a version's _valid_from
       without re-keying it. The collapsed run keeps its earliest-LOADED survivor, so the
       survivor's _updated_at and _loaded_at (and any key a model hashes from its own event
       time) never change, while _valid_from moves to the run's earliest event time and the

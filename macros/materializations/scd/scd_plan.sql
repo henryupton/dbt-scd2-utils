@@ -236,19 +236,23 @@
   {%- endif -%}
   {%- set collapse_redundant_versions = collapse_redundant_versions and update_all_previous_records -%}
 
-  {# Backdate a collapsed content run's _valid_from to its earliest event time. The survivor (the #}
-  {# earliest-loaded row, and with it every column including the model's own key) is unchanged, so #}
-  {# a late-arriving earlier-dated row corrects history without re-keying the version. Opt-in, and #}
-  {# only meaningful when redundant versions collapse. #}
-  {%- set backdate_valid_from = dbt_scd2_utils.get_config_value(config, 'backdate_valid_from', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'backdate_valid_from', default=false)) -%}
-  {%- if backdate_valid_from and not collapse_redundant_versions -%}
-    {{ exceptions.warn("dbt_scd2_utils: backdate_valid_from needs collapse_redundant_versions (and update_all_previous_records); ignored for " ~ this ~ ".") }}
+  {# Which ordering picks a collapsed content run's _valid_from: earliest_loaded (default) takes the #}
+  {# survivor's own updated_at; earliest_updated takes the run's earliest updated_at. The survivor #}
+  {# (and with it every column, including the model's own key) is the same either way, so a late #}
+  {# earlier-dated row can correct history without re-keying the version. Needs collapsing on. #}
+  {%- set collapsed_valid_from = dbt_scd2_utils.get_config_value(config, 'collapsed_valid_from', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'collapsed_valid_from', default='earliest_loaded')) -%}
+  {%- if collapsed_valid_from not in ['earliest_loaded', 'earliest_updated'] -%}
+    {{ exceptions.raise_compiler_error("dbt_scd2_utils: collapsed_valid_from must be 'earliest_loaded' or 'earliest_updated', got '" ~ collapsed_valid_from ~ "' for " ~ this ~ ".") }}
   {%- endif -%}
-  {%- set backdate_valid_from = backdate_valid_from and collapse_redundant_versions -%}
+  {%- if collapsed_valid_from == 'earliest_updated' and not collapse_redundant_versions -%}
+    {{ exceptions.warn("dbt_scd2_utils: collapsed_valid_from: earliest_updated needs collapse_redundant_versions (and update_all_previous_records); ignored for " ~ this ~ ".") }}
+    {%- set collapsed_valid_from = 'earliest_loaded' -%}
+  {%- endif -%}
+  {%- set start_at_earliest_updated = collapsed_valid_from == 'earliest_updated' -%}
 
   {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
-  {# A backdated run moves an already-persisted version's start, so the merge must be able to write it. #}
-  {%- if backdate_valid_from -%}{%- do merge_update_cols.append(valid_from_col) -%}{%- endif -%}
+  {# earliest_updated can move an already-persisted version's start, so the merge must be able to write it. #}
+  {%- if start_at_earliest_updated -%}{%- do merge_update_cols.append(valid_from_col) -%}{%- endif -%}
   {# Recomputing the change column for every record ensures accuracy. #}
   {# No updating all previous records results in multiple 'I' records. #}
   {%- if update_all_previous_records -%}
@@ -337,7 +341,7 @@
       'checksum_column': checksum_col,
       'checksum_columns': checksum_columns,
       'collapse_redundant_versions': collapse_redundant_versions,
-      'backdate_valid_from': backdate_valid_from
+      'collapsed_valid_from': collapsed_valid_from
   }  %}
 
   {%- if should_full_refresh -%}
