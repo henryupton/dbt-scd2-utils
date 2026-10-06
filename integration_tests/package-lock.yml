@@ -1,7 +1,7 @@
 packages:
-- local: ../
+- local: ..
   name: dbt_scd2_utils
 - package: dbt-labs/dbt_utils
   name: dbt_utils
-  version: 1.3.0
-sha1_hash: 3ebb65835e5760bb25412905175a86bf54ab5f74
+  version: 1.4.1
+sha1_hash: 3740ac332a30c482ea1a6ad0ddb64531484a5f5d

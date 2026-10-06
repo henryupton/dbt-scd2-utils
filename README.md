@@ -219,12 +219,14 @@ vars:
   dbt_scd2_utils:
     update_all_previous_records: true   # default
     collapse_redundant_versions: true   # default
+    collapsed_valid_from: earliest_loaded  # default
 ```
 
 | Var | Default | Behaviour |
 |-----|---------|-----------|
 | `update_all_previous_records` | `true` | Re-evaluate every existing version of an affected key on each run, so out-of-order arrivals are slotted in correctly. Set to `false` only if data is guaranteed to arrive in chronological order — it is a performance optimisation that otherwise risks multiple `is_current` rows for a key. |
 | `collapse_redundant_versions` | `true` | When an out-of-order arrival has tracked columns identical to an existing version, the two collapse into one content run and the **earliest-loaded** row survives (by `loaded_at_column`, default `_loaded_at`; `updated_at` order when the model has no such column). A bulk reload that re-delivers an earlier-dated copy of content that already arrived therefore never back-dates the version or its predecessor's `valid_to`. With the default the now-redundant row is **deleted**, so an incremental run matches a full refresh, and the initial load applies the same survivor rule, so a full refresh followed by an incremental run over the same input is a no-op. Set to `false` to **keep** the redundant version instead (no deletes; the existing row is still correctly re-expired). Only takes effect when `update_all_previous_records` is also `true`. |
+| `collapsed_valid_from` | `earliest_loaded` | Which ordering picks a collapsed content run's `valid_from`. `earliest_loaded` uses the survivor's own `updated_at` (today's behaviour). `earliest_updated` uses the run's earliest `updated_at`, so a late-arriving row with an **earlier** `updated_at` moves the version's `valid_from` back (and the previous version's `valid_to` with it). Either way the survivor is the earliest-loaded row, so its `updated_at`, `loaded_at` and every other column, including any surrogate key the model hashes from its own event time, stay the same: history is corrected without re-keying the version. Under `earliest_updated` a persisted version's current `valid_from` feeds the run minimum on incremental runs, so an earlier correction is never undone by a later batch that no longer holds the row that caused it; the exception is a key's first version when its start came from `created_at_column` / `deleted_at_column`, which is recomputed. `valid_from` is added to the merge's updated columns. Needs `collapse_redundant_versions` (and so `update_all_previous_records`); otherwise it warns and falls back to `earliest_loaded`. Any other value fails compilation. Also settable per model via `config.meta.collapsed_valid_from`. |
 
 ### Key Matching & Search Optimization
 
