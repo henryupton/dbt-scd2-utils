@@ -306,6 +306,58 @@ models:
             seed_prefix: redelivered_history_expected
             compare_columns: [customer_id, status, _updated_at, _loaded_at, _valid_from, _valid_to, _is_current, _change_type]
 
+  - name: late_event_scd2
+    description: >
+      collapsed_valid_from: earliest_updated - a late-arriving earlier-dated row corrects a version's _valid_from
+      without re-keying it. The collapsed run keeps its earliest-LOADED survivor, so the
+      survivor's _updated_at and _loaded_at (and any key a model hashes from its own event
+      time) never change, while _valid_from moves to the run's earliest event time and the
+      previous version's _valid_to follows. Iteration 2 lands late 03-10 rows incrementally
+      for key 400 (mid history) and 402 (current version); key 403 checks that an earlier
+      backdate carried only by the persisted _valid_from doesn't regress when a second late
+      row arrives; 401 is a monotonic control. Iteration 3 re-runs iteration 2's input and
+      must be a no-op (expected_3 == expected_2).
+      Run via ./test_scd2_sequence.sh 1 3 late_event_scd2.
+    tests:
+      - dbt_scd2_utils.one_current_per_key:
+          arguments:
+            key_columns: [customer_id]
+            current_column: _is_current
+
+      - dbt_scd2_utils.no_validity_overlaps:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+      - dbt_scd2_utils.continuous_validity_windows:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+      - dbt_scd2_utils.latest_row_is_current:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            current_column: _is_current
+
+      - dbt_scd2_utils.first_record_not_update:
+          arguments:
+            key_columns: [customer_id]
+            valid_from_column: _valid_from
+            change_type_column: _change_type
+
+      - dbt_scd2_utils.valid_window_well_formed:
+          arguments:
+            valid_from_column: _valid_from
+            valid_to_column: _valid_to
+
+      - matches_expected_seed:
+          arguments:
+            seed_prefix: late_event_expected
+            compare_columns: [customer_id, status, _updated_at, _loaded_at, _valid_from, _valid_to, _is_current, _change_type]
+
   - name: restated_history_scd2
     description: >
       restate_versions on a re-derived source: an incoming row replaces the persisted row for the
