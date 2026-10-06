@@ -54,6 +54,7 @@
   {%- set track_checksum = dbt_scd2_utils.get_config_value(config, 'track_checksum', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'track_checksum', default=false)) -%}
   {%- set checksum_col = dbt_scd2_utils.get_config_value(config, 'checksum_column', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'checksum_column', default='_CHECKSUM')) -%}
   {%- set checksum_exclude = dbt_scd2_utils.get_config_value(config, 'checksum_exclude', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'checksum_exclude', default=[])) -%}
+  {%- set restate_versions = dbt_scd2_utils.get_config_value(config, 'restate_versions', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'restate_versions', default=false)) -%}
 
   {%- set unique_key = config.get('unique_key') -%}
 
@@ -250,6 +251,13 @@
   {%- endif -%}
   {%- set start_at_earliest_updated = collapsed_valid_from == 'earliest_updated' -%}
 
+  {# restate_versions: an incoming row replaces the persisted row for the same version, so a #}
+  {# corrected upstream value reaches existing history. It needs the full prior history and the #}
+  {# collapse step, so a version that a restatement makes redundant is deleted as in a full refresh. #}
+  {%- if restate_versions and not collapse_redundant_versions -%}
+    {{ exceptions.raise_compiler_error("dbt_scd2_utils: restate_versions requires update_all_previous_records and collapse_redundant_versions (both default true) for " ~ this ~ ".") }}
+  {%- endif -%}
+
   {%- set merge_update_cols = [is_current_col, valid_to_col] -%}
   {# earliest_updated can move an already-persisted version's start, so the merge must be able to write it. #}
   {%- if start_at_earliest_updated -%}{%- do merge_update_cols.append(valid_from_col) -%}{%- endif -%}
@@ -341,7 +349,8 @@
       'checksum_column': checksum_col,
       'checksum_columns': checksum_columns,
       'collapse_redundant_versions': collapse_redundant_versions,
-      'collapsed_valid_from': collapsed_valid_from
+      'collapsed_valid_from': collapsed_valid_from,
+      'restate_versions': restate_versions
   }  %}
 
   {%- if should_full_refresh -%}
