@@ -1,0 +1,9 @@
+node_name,verdict
+fp_parent_no_loaded_at,unhashable
+fp_child_of_unhashable,new
+fp_parent_view,new
+fp_child_of_view,new
+fp_child_of_seed,skipped
+fp_no_tt,error
+fp_child_of_no_tt,new
+fp_raw_deleted_b,unchanged

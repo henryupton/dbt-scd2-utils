@@ -1,0 +1,4 @@
+event_type,label,is_active
+gen_impression,Generation impression,true
+item_download,Item download,true
+subscription_started,Subscription started,true

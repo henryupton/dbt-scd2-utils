@@ -1,0 +1,50 @@
+version: 2
+
+seeds:
+  - name: fp_raw_base
+    description: Five customers loaded across June and July 2026.
+    config: &fp_raw_config
+      column_types:
+        customer_id: integer
+        customer_name: varchar
+        email: varchar
+        status: varchar
+        _updated_at: timestamp_tz
+        _loaded_at: timestamp_tz
+  - name: fp_raw_appended
+    description: Base plus two customers loaded in August 2026.
+    config: *fp_raw_config
+  - name: fp_raw_versioned
+    description: Appended plus a later version of customer 2, loaded 20 August 2026.
+    config: *fp_raw_config
+  - name: fp_raw_inplace
+    description: Versioned with customer 3's status changed in place, same _updated_at and _loaded_at.
+    config: *fp_raw_config
+  - name: fp_raw_backdated
+    description: Versioned plus customer 8 with a June 2026 _loaded_at, below every watermark.
+    config: *fp_raw_config
+  - name: fp_raw_deleted
+    description: Backdated without customer 1, a June row removed at source.
+    config: *fp_raw_config
+  - name: fp_raw_deleted_b
+    description: Deleted without customer 4 as well, a July row removed at source.
+    config: *fp_raw_config
+  - name: fp_registry
+    description: A registry seed in the shape of the real ones, with no loaded-at column. Reads unhashable whether or not its content changed; the runner rewrites a label in scenario 37.
+    config:
+      tags: [fp_edp]
+      column_types:
+        event_type: varchar
+        label: varchar
+        is_active: boolean
+  - name: fp_seed_live
+    description: The deleted_b customer rows with _loaded_at. The runner rewrites customer 3's status in scenario 37, so a reload with changed content reads modified.
+    config:
+      tags: [fp_edp]
+      column_types:
+        customer_id: integer
+        customer_name: varchar
+        email: varchar
+        status: varchar
+        _updated_at: timestamp_tz
+        _loaded_at: timestamp_tz

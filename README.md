@@ -15,6 +15,7 @@ A dbt package providing custom materializations for Slowly Changing Dimension (S
 - **Deletion Support**: Optional `deleted_at_column` for logical deletions and resurrections
 - **Metadata-Preserving Full Refresh**: `--full-refresh` truncates and reloads in place when the column set is unchanged, so grants, comments, tags, policies and clustering survive
 - **Temporal Joins**: `scd2_join` macro with composite key support
+- **Content Fingerprint**: hooks that record whether a build changed a table's content, and a guard a materialization can ask before rebuilding a child of `unchanged` parents
 - **Configurable**: Customize column names and behavior per model or globally
 - **Generic Tests**: Comprehensive SCD2 data quality tests included
 
@@ -548,6 +549,77 @@ Join multiple SCD2 tables across time with composite key support:
 ```
 
 The macro creates a temporal spine and joins all tables' active versions for each time period.
+
+## Content Fingerprint
+
+Tools for answering "did this build change the table's content?" so a deploy can skip descendants whose upstream came out identical. They are general macros under `macros/fingerprint/`; nothing in the `scd` materializations calls them, and a project opts in with two hooks and a var.
+
+```yaml
+# dbt_project.yml
+on-run-start:
+  - "{{ dbt_scd2_utils.fingerprint_register() }}"
+
+models:
+  +post-hook: "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+
+seeds:
+  +post-hook: "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+
+snapshots:
+  +post-hook: "{{ dbt_scd2_utils.fingerprint_post(this) }}"
+```
+
+```bash
+dbt build --vars '{"fingerprint": true, "deploy_id": "deploy-123"}'
+```
+
+Every resource type the register enrols needs the post-hook: an enrolled node whose post-hook never runs stays `pending` and blocks every child.
+
+`fingerprint_register()` appends one `pending` row per selected model, seed and snapshot (ephemeral models excepted) to a ledger table (`fingerprint_deploy_node`), stamped with Snowflake's clock as `snapshot_at`, the node's parents, its column shape and its source checksum. `fingerprint_post(this)` then compares the table as built with the table `at(timestamp => snapshot_at)` and appends a verdict row. The ledger is append-only, so threads finishing together never queue on a table lock. Per node and deploy the latest real verdict counts; a `skipped` row stands only when the node recorded no verdict in that deploy, and `pending` only when nothing else exists. A verdict is measured against the deploy's snapshot, so it is cumulative over every step and retry of the deploy, and a later skip wrote nothing.
+
+| Verdict | Meaning | Blocks a child's skip |
+|---------|---------|-----------------------|
+| `new` | Object created or replaced after the snapshot, or a view | yes |
+| `unchanged` | Nothing written and the row count is equal, or every hashed month is equal | no |
+| `appended` | Every row the build wrote sits above the pre-build watermark (`max(_loaded_at)`) | no |
+| `modified` | A column was added, removed or retyped, or a month at or below the watermark counts or hashes differently | yes |
+| `unhashable` | No loaded-at column on one side, a loaded-at column that is not a timestamp or date, or a table without row timestamps (`ROW_TIMESTAMP` off, which includes Iceberg) | yes |
+| `error` | Relation missing, no Time Travel (retention 0), or a snapshot older than the table's Time Travel retention | yes |
+| `skipped` | The guard skipped the build | no |
+
+The comparison is cheap until it has to hash. Object state comes from `show tables like`, shape from `show columns`, and the counts are filtered scalar subqueries on `METADATA$ROW_LAST_COMMIT_TIME` and the watermark, which prune to the partitions the build wrote. Only then are the touched `_loaded_at` months hashed with `hash_agg` on both sides (every month when every row was rewritten), and per-month row counts catch a deletion in a month the build never touched. Rows with a null loaded-at value form their own bucket and count as old rows, so they cannot pass as appended. The watermark is compared in the column's own type, so `timestamp_ntz` columns are safe under any session timezone. `GEOGRAPHY` and `GEOMETRY` columns cannot be hashed and are left out; the verdict `detail` names them. Per-month detail lands in `fingerprint_deploy_segment`.
+
+`fingerprint_should_skip()` is for a materialization to call before building. It returns true only when all of these hold:
+
+- `fingerprint_skip_unchanged_upstream` is on.
+- At least one parent is registered in this deploy, and none is `pending`, `new`, `modified`, `unhashable` or `error`. Ephemeral parents are looked through to their own parents (an ephemeral model has no relation and no hooks, so it never carries a verdict).
+- The node's own source checksum matches the one recorded at its last fingerprinted build of the same relation. A node whose own SQL changed builds however its parents came out, and a model newly guarded or under a new alias builds once first.
+- Nothing the ledger recorded since that build (or skip) says a parent moved after the node read it. A parent's verdict is measured from its deploy's snapshot, so on its own it cannot vouch for a parent rebuilt after the node. The node builds on a parent verdict recorded since then whose snapshot predates the node's build (a later step of one deploy rebuilt the parent), on a blocking verdict or `pending` row for a parent in another deploy, and on a registration of the node itself under other SQL that recorded no verdict (a build whose hooks failed after the table was written).
+
+Two blind spots. The checksum is the node's own source file, so a change that alters its output only through a macro it calls, a var or YAML-only config leaves it equal. And a run with the fingerprint off never reaches the ledger, so a parent it rebuilt without its children goes unseen. Deploy after either with `fingerprint_skip_unchanged_upstream` off.
+
+`fingerprint_mark_skipped()` records the skip so the node's own children can read it. `integration_tests/macros/guarded_table.sql` shows the shape:
+
+```jinja
+{% if existing_relation is not none and dbt_scd2_utils.fingerprint_should_skip() %}
+  {% do dbt_scd2_utils.fingerprint_mark_skipped(detail='no blocking parent verdict') %}
+  {% call statement('main') %}select 'skipped' as outcome{% endcall %}
+  {{ return({'relations': [existing_relation]}) }}
+{% endif %}
+```
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `fingerprint` | `false` | Master switch; every macro is a no-op without it |
+| `fingerprint_skip_unchanged_upstream` | `false` | Lets `fingerprint_should_skip()` return true |
+| `deploy_id` | `invocation_id` | Shared by the steps of one deploy; registration is idempotent per deploy id |
+| `fingerprint_schema` | `target.schema` | Schema holding the two ledger tables; point it at a dedicated schema so model-schema housekeeping (orphan drops, schema rebuilds) never sees the ledger |
+| `fingerprint_loaded_at_column` | `_loaded_at` | Watermark and month-bucket column; per model via `meta.fingerprint_loaded_at` |
+| `fingerprint_exclude` | `_batched_at`, `_written_at`, `_synthesised_at` | Columns left out of the hash; per model via `meta.fingerprint_exclude` |
+| `fingerprint_exclude_scd_columns` | `true` | Also leaves `is_current_column` and `valid_to_column` (resolved per model as the `scd` materialization resolves them) out of the hash, so a new version closing an old row reads `appended` rather than `modified`. The cost: a logic change that only moves validity (a `valid_to` fix, a `default_valid_to` change) reads `unchanged` and `scd2_join` consumers skip. Set `false` where that matters |
+| `fingerprint_select_tag` | none | Fallback selection for runtimes without `selected_resources` |
+
+Requirements: Snowflake with Time Travel on the fingerprinted tables (transient tables cap at one day, which is enough for a deploy) and row timestamps (`ROW_TIMESTAMP_DEFAULT` on the account or schema, or per-table `ROW_TIMESTAMP`); a table without them reads `unhashable` rather than failing. A build has to keep the object for the snapshot to survive: truncate + insert, `insert overwrite`, `merge` and `insert` all do; `create or replace` reads `new`, which is the right verdict for a first build or a column-set change. The hooks run inside the node, so a SQL error they do not anticipate fails that node's build; the known cases (missing relation, no Time Travel, a snapshot older than the table's Time Travel retention, no row timestamps, unsupported column types) are recorded as verdicts instead.
 
 ## Generic Tests
 

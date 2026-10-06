@@ -1,0 +1,7 @@
+node_name,verdict
+fp_dim_scd2,appended
+fp_dim_scd1,appended
+fp_evt_merge,appended
+fp_stg_append,appended
+fp_table_replace,new
+fp_child_guarded,skipped

@@ -1,0 +1,7 @@
+version: 2
+
+models:
+  - name: fp_parent_view
+    description: View over the fixture rows. Never fingerprinted, always new.
+  - name: fp_no_tt
+    description: Merge-built table kept at retention 0 (no retention hook in this folder), so Time Travel is unavailable and the verdict is error.

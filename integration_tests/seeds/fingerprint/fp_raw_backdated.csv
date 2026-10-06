@@ -1,0 +1,10 @@
+customer_id,customer_name,email,status,_updated_at,_loaded_at
+1,Ada Lovelace,ada@example.com,ACTIVE,2026-06-15 09:00:00+0000,2026-06-15 09:05:00+0000
+2,Grace Hopper,grace@example.com,ACTIVE,2026-06-15 09:00:00+0000,2026-06-15 09:05:00+0000
+3,Alan Turing,alan@example.com,INACTIVE,2026-06-16 09:00:00+0000,2026-06-16 09:05:00+0000
+4,Katherine Johnson,katherine@example.com,ACTIVE,2026-07-10 09:00:00+0000,2026-07-10 09:05:00+0000
+5,Margaret Hamilton,margaret@example.com,ACTIVE,2026-07-11 09:00:00+0000,2026-07-11 09:05:00+0000
+6,Barbara Liskov,barbara@example.com,ACTIVE,2026-08-05 09:00:00+0000,2026-08-05 09:05:00+0000
+7,Frances Allen,frances@example.com,ACTIVE,2026-08-06 09:00:00+0000,2026-08-06 09:05:00+0000
+2,Grace Hopper,grace@example.com,INACTIVE,2026-08-20 09:00:00+0000,2026-08-20 09:05:00+0000
+8,Radia Perlman,radia@example.com,ACTIVE,2026-06-20 09:00:00+0000,2026-06-20 09:05:00+0000
