@@ -2,7 +2,7 @@ name: 'dbt_scd2_utils_integration_tests'
 version: '1.0.0'
 config-version: 2
 
-require-dbt-version: [">=1.0.0"]
+require-dbt-version: [">=1.10.0", "<3.0.0"]
 
 dbt-cloud:
   # Sourced from the environment so the internal dbt Cloud project id is not

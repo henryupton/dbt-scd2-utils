@@ -4,7 +4,7 @@ A dbt package providing custom materializations for Slowly Changing Dimension (S
 
 [![dbt Hub](https://img.shields.io/badge/dbt-Hub-FF6849)](https://hub.getdbt.com)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![dbt Version](https://img.shields.io/badge/dbt-%3E%3D1.0.0-orange.svg)](https://docs.getdbt.com)
+[![dbt Version](https://img.shields.io/badge/dbt-%3E%3D1.10.0%2C%20%3C3.0.0-orange.svg)](https://docs.getdbt.com)
 
 ## Features
 
@@ -611,7 +611,7 @@ models:
 
 ## Requirements
 
-- **dbt**: >= 1.0.0
+- **dbt**: >= 1.10.0, < 3.0.0 (dbt-core 1.10+ or dbt Fusion; `config.meta_get` is required)
 - **Database**: Snowflake
 - **Adapter**: dbt-snowflake
 - **Dependencies**: dbt-utils (auto-installed)
