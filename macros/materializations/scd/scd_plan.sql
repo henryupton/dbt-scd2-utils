@@ -380,7 +380,13 @@
       {%- endcall -%}
       {%- set n_null = load_result('dbt_scd2_utils_null_key_guard')['data'][0][0] | int -%}
       {%- if n_null > 0 -%}
-        {{ exceptions.warn("dbt_scd2_utils: " ~ n_null ~ " incoming row(s) for " ~ this ~ " have a NULL in unique_key " ~ unique_key ~ "; falling back to null-safe equal_null matching (not Search-Optimization-eligible). Fix the source NULLs to keep the faster `=` match, or set assume_keys_not_null=false to silence this warning.") }}
+        {%- set null_key_message = "dbt_scd2_utils: " ~ n_null ~ " incoming row(s) for " ~ this ~ " have a NULL in unique_key " ~ unique_key ~ "; falling back to null-safe equal_null matching (not Search-Optimization-eligible). Fix the source NULLs to keep the faster `=` match, set assume_keys_not_null=false to skip this check, or set suppress_null_key_warning=true to keep the check without the warning." -%}
+        {%- set suppress_null_key_warning = dbt_scd2_utils.get_config_value(config, 'suppress_null_key_warning', default=dbt_scd2_utils.get_from_object(var('dbt_scd2_utils', {}), 'suppress_null_key_warning', default=false)) -%}
+        {%- if (suppress_null_key_warning | string | lower) in ['true', '1'] -%}
+          {{ log(null_key_message) }}
+        {%- else -%}
+          {{ exceptions.warn(null_key_message) }}
+        {%- endif -%}
         {%- set key_match_null_safe = true -%}
       {%- else -%}
         {%- set key_match_null_safe = false -%}

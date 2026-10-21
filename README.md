@@ -142,6 +142,7 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `checksum_column` | ❌ | `_CHECKSUM` | Name of the checksum column |
 | `checksum_exclude` | ❌ | `[]` | Columns to omit from the `_checksum` fingerprint (e.g. volatile processing timestamps) |
 | `assume_keys_not_null` | ❌ | inferred | (SCD2) `true` matches keys with `=` (prune- and Search-Optimization-eligible); `false` uses null-safe `equal_null`. Unset infers from `not_null` constraints, else guards at runtime. See [Key Matching](#key-matching--search-optimization). |
+| `suppress_null_key_warning` | ❌ | `false` | (SCD2) `true` logs the runtime null-key guard's message at debug level instead of warning. The guard still runs and still picks the operator. See [Key Matching](#key-matching--search-optimization). |
 | `search_optimization` | ❌ | `false` | (SCD2) `true` adds Snowflake Search Optimization (`EQUALITY`) on the key columns. Enterprise Edition; see [Key Matching](#key-matching--search-optimization). |
 | `search_optimization_columns` | ❌ | `unique_key` | (SCD2) Columns to build `search_optimization` on, when enabled. |
 | `full_refresh_strategy` | ❌ | `truncate` | How `--full-refresh` rebuilds an existing table: `truncate` keeps the table and swaps its rows when the schema is unchanged, `replace` always runs `create or replace table` (see [Full Refresh](#full-refresh)) |
@@ -170,11 +171,13 @@ vars:
     valid_to_column: "eff_end_date"
     default_valid_to: "2999-12-31 23:59:59"
     suppress_date_type_warning: false   # default
+    suppress_null_key_warning: false    # default
 ```
 
 | Var | Default | Behaviour |
 |-----|---------|-----------|
 | `suppress_date_type_warning` | `false` | The materialization warns when the `updated_at` column is a `DATE` rather than a `TIMESTAMP`, since date-grain change tracking can produce imprecise validity windows. Set to `true` to silence that warning when a `DATE` grain is intentional. Only the warning is suppressed; the DATE handling itself is unchanged. |
+| `suppress_null_key_warning` | `false` | The SCD2 runtime null-key guard warns when an incoming batch has a NULL in `unique_key`. Set to `true` to log the message at debug level instead. Only the warning is suppressed; the guard still runs and still falls back to `equal_null`. Also settable per model via `config.meta.suppress_null_key_warning`. |
 
 ### Full Refresh
 
@@ -245,7 +248,8 @@ resolved per model, cheapest first:
 3. **Runtime guard** (default when neither is set): the incoming batch is checked for NULLs in the
    key. If none, `=` is used. If any, the model **warns and falls back to `equal_null`** for that
    run, so output is always correct. Set `assume_keys_not_null: false` to skip the check and the
-   warning when you know a key is nullable.
+   warning when you know a key is nullable. Set `suppress_null_key_warning: true` instead to keep
+   the check (so clean batches still get `=`) and log the message at debug level rather than warn.
 
 Because `=` and `equal_null` are identical when there are no NULLs, this default is
 behaviour-preserving: clean-key models simply gain prune-friendly matching.
