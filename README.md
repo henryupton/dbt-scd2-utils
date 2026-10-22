@@ -145,6 +145,7 @@ Insert-only: the original (first-seen) value is retained and never updated. Iden
 | `suppress_null_key_warning` | ❌ | `false` | (SCD2) `true` logs the runtime null-key guard's message at debug level instead of warning. The guard still runs and still picks the operator. See [Key Matching](#key-matching--search-optimization). |
 | `search_optimization` | ❌ | `false` | (SCD2) `true` adds Snowflake Search Optimization (`EQUALITY`) on the key columns. Enterprise Edition; see [Key Matching](#key-matching--search-optimization). |
 | `search_optimization_columns` | ❌ | `unique_key` | (SCD2) Columns to build `search_optimization` on, when enabled. |
+| `merge_update_columns` | ❌ | none | (SCD2) dbt's native config, set at the top level like `unique_key`. Extra columns the incremental merge writes back to versions it has already persisted, on top of the tracking columns it already maintains (`valid_to`, `is_current`, and the change column under `update_all_previous_records`). Add `valid_from` when a late-arriving earlier version can demote a key's first version whose start came from `created_at_column`; without it that version keeps its backdated start and overlaps the new one. `valid_from` needs `update_all_previous_records`; otherwise it warns and is ignored. |
 | `full_refresh_strategy` | ❌ | `truncate` | How `--full-refresh` rebuilds an existing table: `truncate` keeps the table and swaps its rows when the schema is unchanged, `replace` always runs `create or replace table` (see [Full Refresh](#full-refresh)) |
 
 ### Audit Column Names

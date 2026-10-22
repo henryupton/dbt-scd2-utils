@@ -260,6 +260,15 @@
     {%- if track_previous_version -%}{%- do merge_update_cols.append(previous_version_col) -%}{%- endif -%}
     {%- if track_changed_columns -%}{%- do merge_update_cols.append(changed_columns_col) -%}{%- endif -%}
   {%- endif -%}
+  {# dbt's merge_update_columns adds to the tracking columns above, which the merge always maintains. #}
+  {# Writing a persisted valid_from is only safe over a key's full history. #}
+  {%- for col in config.get('merge_update_columns') or [] -%}
+    {%- if col | lower == valid_from_col | lower and not update_all_previous_records -%}
+      {{ exceptions.warn("dbt_scd2_utils: merge_update_columns can only include " ~ valid_from_col ~ " with update_all_previous_records=true; ignored for " ~ this ~ ".") }}
+    {%- elif col | lower not in merge_update_cols | map('lower') | list -%}
+      {%- do merge_update_cols.append(col) -%}
+    {%- endif -%}
+  {%- endfor -%}
 
   {# Optional SCD2-only audit columns: prior-version object and per-column change map. #}
   {%- if track_previous_version -%}{%- do audit_columns.append(previous_version_col) -%}{%- endif -%}
