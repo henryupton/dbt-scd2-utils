@@ -18,6 +18,10 @@
 
 {% materialization scd, default %}
 
+  {# Before the plan: it reads the target's max(_loaded_at), which a pre-hook may rewind. #}
+  {{ run_hooks(pre_hooks, inside_transaction=False) }}
+  {{ run_hooks(pre_hooks, inside_transaction=True) }}
+
   {%- set plan = dbt_scd2_utils.scd_plan(sql) -%}
 
   {%- call statement('main') -%}
