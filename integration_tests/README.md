@@ -10,6 +10,7 @@ This directory contains integration tests for the dbt-scd2-utils package, organi
 Tests for the core SCD2 materialization functionality:
 - **`customers_scd2.sql`** - Main SCD2 materialization test model
 - **`redelivered_history_scd2.sql`** - Survivor parity between the initial load and the incremental merge when a bulk reload re-delivers earlier-dated content with a later `_loaded_at`; golden seeds `redelivered_history_expected_{1,2}` are identical because iteration 2 (incremental over the same input) must be a no-op. Run `./test_scd2_sequence.sh 1 2 redelivered_history_scd2`.
+- **`restated_history_scd2.sql`** - `restate_versions` on a re-derived source: a later load carries corrected values for versions already persisted (a late value cutting a new version, a version made redundant, in-place corrections, a corrected first version). Golden seed `restated_history_expected_2` is also what a full refresh over `restated_history_raw_2` lands, so the incremental run must match a rebuild. Run `./test_scd2_sequence.sh 1 2 restated_history_scd2`.
 - **`schema.yml`** - Tests and configuration for SCD2 models
 
 Golden seeds compared with `matches_expected_seed` need real `TIMESTAMP_TZ` columns, so declare them with the seed `column_types` config; `columns[].data_type` alone is overridden by the inferred type on dbt Fusion (dbt1058).

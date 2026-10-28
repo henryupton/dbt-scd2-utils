@@ -1,0 +1,38 @@
+version: 2
+
+# column_types (not columns[].data_type) fixes the loaded column type; see redelivered_history_seeds.yml.
+seeds:
+  - name: restated_history_raw_1
+    config:
+      column_types: &restated_history_raw_column_types
+        customer_id: integer
+        customer_name: varchar
+        email: varchar
+        status: varchar
+        deleted_at: timestamp_tz
+        _created_at: timestamp_tz
+        _updated_at: timestamp_tz
+        _loaded_at: timestamp_tz
+
+  - name: restated_history_raw_2
+    config:
+      column_types: *restated_history_raw_column_types
+
+  # Golden full-history snapshots for restated_history_scd2. expected_2 is also what a full
+  # refresh over restated_history_raw_2 produces, so the incremental run must match a rebuild.
+  - name: restated_history_expected_1
+    config:
+      column_types: &restated_history_expected_column_types
+        customer_id: integer
+        email: varchar
+        status: varchar
+        _updated_at: timestamp_tz
+        _loaded_at: timestamp_tz
+        _valid_from: timestamp_tz
+        _valid_to: timestamp_tz
+        _is_current: boolean
+        _change_type: varchar
+
+  - name: restated_history_expected_2
+    config:
+      column_types: *restated_history_expected_column_types
