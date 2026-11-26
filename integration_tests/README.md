@@ -106,6 +106,9 @@ dbt run --select test_source_macro_exclude_data --vars "exclude_data_after_run_s
 
 # Test incremental + exclude_data_after_run_start
 dbt run --select test_source_macro_incremental --vars "exclude_data_after_run_start: true"
+
+# Test the loaded_from / loaded_to window
+dbt run --select test_source_macro_loaded_window --vars "{loaded_from: '2024-01-01 00:00:00 +00:00', loaded_to: '2024-01-02 00:00:00 +00:00'}"
 ```
 
 ## Features Tested

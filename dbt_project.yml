@@ -37,8 +37,11 @@ vars:
     default_valid_to: "2999-12-31 23:59:59"
     # Default valid_from date for initial incremental loads
     default_valid_from: "1900-01-01 00:00:00"
-    # When true, exclude data that arrived after the dbt run started
+    # When true, exclude data that arrived after the dbt run started (loaded_to defaults to the run start)
     exclude_data_after_run_start: false
+    # Optional load-time window applied by source() and loaded_at_bounds(): loaded_from <= loaded_at < loaded_to
+    loaded_from: null
+    loaded_to: null
     # When true, bring all previous versions of a record in for processing when a change is detected
     # Slower but guarantees created_at and change_type are always correct
     update_all_previous_records: true
