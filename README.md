@@ -530,6 +530,22 @@ from {{ source('raw', 'products') }}
 | 1 | Widget | 2024-01-10 | D | 2024-01-10 | 2024-01-15 |
 | 1 | Widget | null | I | 2024-01-15 | 2999-12-31 |
 
+## Load-Time Window
+
+The `source()` override bounds every read to a load-time window when either var is set:
+
+```bash
+dbt build --vars "{loaded_from: '2026-11-22 00:00:00 +00:00', loaded_to: '2026-11-25 00:00:00 +00:00'}"
+```
+
+Both are optional and the window is half-open: `loaded_from <= loaded_at < loaded_to`. It applies to the
+`loaded_at_col` passed to `source()` or, when none is passed, the source's declared `loaded_at_field`. Give each
+value an explicit offset, since a bare timestamp is read in the session timezone. Setting only `loaded_to` builds
+the run as the warehouse stood at that moment, so two runs at successive `loaded_to` values replay how history grew.
+
+`loaded_at_bounds(column)` returns the same predicates, for a project's own `ref()` override to apply them the same
+way. `exclude_data_after_run_start: true` still works: it sets `loaded_to` to the run start when `loaded_to` is unset.
+
 ## Temporal Joins
 
 Join multiple SCD2 tables across time with composite key support:
